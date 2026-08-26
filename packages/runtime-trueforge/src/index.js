@@ -185,7 +185,10 @@ function commandForAction(action, manifest) {
   if (manifest.runtime !== "node" || prefix === undefined) {
     fail(`Runtime policy is not implemented in Phase 2: ${command.policyId}.`);
   }
-  const argv = [...prefix, ...command.arguments];
+  if (command.arguments.length !== 0) {
+    fail(`Runtime policy arguments are not implemented in Phase 2: ${command.policyId}.`);
+  }
+  const argv = [...prefix];
   argv.forEach((token, index) => assertCommandToken(token, `RuntimeExecution.argv[${index}]`));
   return {
     command: Object.freeze({

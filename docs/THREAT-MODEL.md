@@ -61,6 +61,7 @@ Internal reversible writes within the approved sandbox copy do not require repea
 - Driver startup cleanup, execution, deadline propagation, failed timeout cancellation, retryable shutdown, and execution-after-close behavior have separate tests.
 - The TrueForge HTTP driver accepts only a loopback endpoint and checks the merged sandbox tool call against the exact derived command, working directory, and environment.
 - The runtime passes the canonical confined working-directory path to the driver while retaining only its relative form in public evidence.
+- Node.js policy arguments fail closed in Phase 2, preventing npm options such as external prefixes, configuration files, or script-shell overrides from redirecting execution.
 - A live TrueForge 0.1.4 proof runs `npm test` in a disposable local sandbox, creates one fixture result file, captures exit and output evidence, verifies containment, and closes the session.
 
 ## Deferred security controls

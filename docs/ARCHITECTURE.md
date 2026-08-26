@@ -54,7 +54,7 @@ These Phase 1 APIs do not execute commands, access the filesystem, connect to Tr
 - `validateRuntimeEvidence` accepts only execution identifiers, mission binding, timestamps, exit status, the structured command, a relative working directory, stdout, stderr, timeout state, and a bounded runtime error.
 - `runtimeCommandFingerprint` canonicalizes only the public structured command representation.
 
-The public execution request names one known lifecycle action. The adapter selects the corresponding command from the already validated Phase 1 manifest and derives fixed argv internally. Phase 2 implements the Node.js policies `npm-ci`, `npm-test`, and `npm-run-build`. It exposes no shell-string, raw-command, arbitrary-module, or unsafe bypass option.
+The public execution request names one known lifecycle action. The adapter selects the corresponding command from the already validated Phase 1 manifest and derives fixed argv internally. Phase 2 implements the Node.js policies `npm-ci`, `npm-test`, and `npm-run-build` with argument-free mappings. Policy-specific argument allowlists remain deferred so npm configuration cannot redirect execution. The adapter exposes no shell-string, raw-command, arbitrary-module, or unsafe bypass option.
 
 ## Agent profiles
 

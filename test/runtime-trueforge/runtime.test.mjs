@@ -235,6 +235,19 @@ test("preserves Phase 1 rejection of interpreter evaluation and environment assi
   }
 });
 
+test("rejects npm configuration and path arguments that could redirect execution", async () => {
+  for (const argument of [
+    "--prefix=/tmp/other-project",
+    "--prefix",
+    "/tmp/other-project",
+    "--userconfig=/tmp/npmrc",
+    "--script-shell=/tmp/custom-shell"
+  ]) {
+    const { session } = await readySession({ manifest: validManifest([argument]) });
+    await assert.rejects(session.execute(execution()), /arguments are not implemented/u);
+  }
+});
+
 test("rejects undeclared and secret-bearing environment injection", async () => {
   const { session } = await readySession();
   await assert.rejects(
