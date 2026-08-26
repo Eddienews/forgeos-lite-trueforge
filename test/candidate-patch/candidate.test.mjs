@@ -43,12 +43,16 @@ async function write(root, relativePath, content) {
   await writeFile(target, content, "utf8");
 }
 
-async function fixture() {
+async function fixture({ objectFormat } = {}) {
   const temporary = await realpath(await mkdtemp(path.join(os.tmpdir(), "forgeos-phase3-")));
   const original = path.join(temporary, "original");
   const builder = path.join(temporary, "builder");
   await mkdir(original);
-  await git(original, "init", "--quiet");
+  const initArguments = ["init", "--quiet"];
+  if (objectFormat !== undefined) {
+    initArguments.push(`--object-format=${objectFormat}`);
+  }
+  await git(original, ...initArguments);
   await git(original, "config", "user.name", "Phase Three Test");
   await git(original, "config", "user.email", "phase-three@example.invalid");
   await write(original, "src/alpha.txt", "Alpha baseline.\n");
@@ -142,6 +146,23 @@ test("normalizes Builder line endings before hashing", async (t) => {
     baseRevision: state.baseRevision
   });
   assert.equal(artifact.operations[0].content, "Alpha changed.\nNext line.\n");
+});
+
+test("generates and applies a candidate in a SHA-256 Git repository", async (t) => {
+  const state = await fixture({ objectFormat: "sha256" });
+  t.after(state.cleanup);
+  assert.match(state.baseRevision, /^[a-f0-9]{64}$/u);
+  const artifact = await standardArtifact(state);
+  const candidate = reviewed(artifact);
+  const evidence = await applyCandidateArtifact({
+    candidate,
+    artifact,
+    projectRoot: state.original,
+    clock: () => observedAt
+  });
+  assert.equal((await git(state.original, "rev-parse", "HEAD")).stdout.trim(), state.baseRevision);
+  assert.deepEqual(evidence.changedFiles, candidate.affectedFiles);
+  assert.equal(evidence.success, true);
 });
 
 test("rejects binary candidate content", async (t) => {

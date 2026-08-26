@@ -31,7 +31,7 @@ import {
 } from "@forgeos-lite/contracts";
 
 const execFileAsync = promisify(execFile);
-const revisionPattern = /^[a-f0-9]{40}$/u;
+const revisionPattern = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u;
 const identifierPattern = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/u;
 const pathSegmentPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/u;
 const operationNames = new Set(["add", "modify", "delete"]);
