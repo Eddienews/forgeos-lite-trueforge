@@ -10,6 +10,7 @@
   "type": "module",
   "scripts": {
     "format:check": "node scripts/check-format.mjs",
+    "test:integration:trueforge": "node scripts/run-trueforge-live-proof.mjs",
     "test:unit": "node --test",
     "test:language": "node scripts/check-language.mjs",
     "test": "npm run format:check && npm run test:unit && npm run test:language"

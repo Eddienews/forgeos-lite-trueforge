@@ -13,14 +13,14 @@ apps/
 packages/
   contracts/              Public schemas and event contracts
   core/                   Mission state and handoff rules
-  trueforge-adapter/      TrueForge integration boundary
+  runtime-trueforge/      TrueForge session and execution boundary
   project-mcp/            Project inspection and patch tools
 examples/
   sample-project/         Reproducible demonstration project
 docs/                     Architecture, security, and event material
 ```
 
-Phase 1 implements `packages/contracts` and `packages/core`. The remaining workspace directories are deferred to later reviewed pull requests.
+Phase 1 implements `packages/contracts` and `packages/core`. Phase 2 implements `packages/runtime-trueforge`. The remaining workspace directories are deferred to later reviewed pull requests.
 
 ## Phase 1 public APIs
 
@@ -41,7 +41,20 @@ Phase 1 implements `packages/contracts` and `packages/core`. The remaining works
 - `replayMissionJournal` derives current state and reports mutable-cache divergence.
 - `InMemoryMissionJournal` provides idempotent in-memory append and replay behavior for Phase 1 tests.
 
-These APIs do not execute commands, access the filesystem, connect to TrueForge, or apply patches.
+These Phase 1 APIs do not execute commands, access the filesystem, connect to TrueForge, or apply patches.
+
+## Phase 2 public APIs
+
+`packages/runtime-trueforge` isolates execution from the mission state machine:
+
+- `createTrueForgeSession` validates the trusted workspace root and Phase 1 project manifest, creates one driver-backed session, and binds the returned workspace below the configured root.
+- `TrueForgeRuntimeSession` exposes execution-only state: `ready`, `executing`, `closing`, `failed`, and `closed`. It does not replace or reinterpret mission state.
+- `createTrueForgeHttpDriver` uses the loopback TrueForge HTTP API, creates an inline-agent session, discovers its local sandbox through a harmless `pwd` probe, executes one validated command, reads merged TrueForge events within the same deadline, and deletes the session during shutdown.
+- The runtime resolves a requested relative working directory to its canonical confined host path before handing it to the driver. Public evidence retains the validated relative path and does not expose the host path.
+- `validateRuntimeEvidence` accepts only execution identifiers, mission binding, timestamps, exit status, the structured command, a relative working directory, stdout, stderr, timeout state, and a bounded runtime error.
+- `runtimeCommandFingerprint` canonicalizes only the public structured command representation.
+
+The public execution request names one known lifecycle action. The adapter selects the corresponding command from the already validated Phase 1 manifest and derives fixed argv internally. Phase 2 implements the Node.js policies `npm-ci`, `npm-test`, and `npm-run-build` with argument-free mappings. Policy-specific argument allowlists remain deferred so npm configuration cannot redirect execution. The adapter exposes no shell-string, raw-command, arbitrary-module, or unsafe bypass option.
 
 ## Agent profiles
 
@@ -74,7 +87,7 @@ Conceptual input:
 }
 ```
 
-The values above are policy identifiers, not commands. Phase 1 represents lifecycle commands as either a known policy with structured argument tokens or an explicit `not_applicable` value. Runtime policy execution is deferred to Phase 2.
+The values above are policy identifiers, not commands. Phase 1 represents lifecycle commands as either a known policy with structured argument tokens or an explicit `not_applicable` value. Phase 2 maps the three Node.js policies to fixed argv and executes them inside the bound TrueForge workspace. Python and static policy execution remain deferred.
 
 ## MCP tool boundary
 
@@ -101,7 +114,16 @@ The only real-project write tool is `apply_candidate_patch`. Its MCP annotations
 
 TrueForge owns agent session persistence. ForgeOS Lite stores public mission contracts and emits timeline events through the server. The adapter maps TrueForge session, agent, tool, sandbox, and approval events into stable public contracts without exposing credentials or private chain-of-thought.
 
-Phase 1 implements only in-memory journal construction, verification, and replay. Filesystem persistence, the server, the TrueForge adapter, and reconnection behavior remain deferred. A trusted journal anchor is required to detect removal of the final event because a hash chain alone cannot prove that its tail is complete.
+Phase 1 implements only in-memory journal construction, verification, and replay. Phase 2 execution evidence is returned to its caller but is not durably stored. Filesystem journal persistence, the server, and reconnection behavior remain deferred. A trusted journal anchor is required to detect removal of the final event because a hash chain alone cannot prove that its tail is complete.
+
+## Phase 2 runtime limits
+
+- The HTTP driver is restricted to a loopback standalone TrueForge endpoint.
+- TrueForge owns the isolated sandbox path below a trusted application-supplied root; ForgeOS Lite does not mount or mutate a user's external project.
+- TrueForge 0.1.4 returns combined command output in its sandbox tool response. The adapter exposes that response as stdout and keeps stderr empty when the upstream response has no separate stderr channel.
+- Command dispatch through the HTTP driver is model-mediated. The driver compares the merged TrueForge tool call with the exact derived command, working directory, and environment and reports any substitution as a runtime failure. The local sandbox remains the confinement boundary.
+- Startup validation failures trigger a bounded session cleanup attempt. Failed timeout cancellation leaves the session failed, and a transient shutdown failure can be retried without admitting more execution.
+- Durable evidence, restart recovery, approval-required patch application, and non-Node policy execution remain deferred.
 
 ## Language boundary
 
