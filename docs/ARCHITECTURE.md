@@ -16,12 +16,13 @@ packages/
   runtime-trueforge/      TrueForge session and execution boundary
   candidate-patch/        Deterministic reviewed text changes
   mcp-server/             Approval-gated candidate application
+  orchestrator/           Fixed Phase 4 mission vertical slice
 examples/
   sample-project/         Reproducible demonstration project
 docs/                     Architecture, security, and event material
 ```
 
-Phase 1 implements `packages/contracts` and `packages/core`. Phase 2 implements `packages/runtime-trueforge`. Phase 3 implements `packages/candidate-patch` and `packages/mcp-server`. The application server, interface, examples, and general orchestration remain deferred.
+Phase 1 implements `packages/contracts` and `packages/core`. Phase 2 implements `packages/runtime-trueforge`. Phase 3 implements `packages/candidate-patch` and `packages/mcp-server`. Phase 4 implements `packages/orchestrator`. The application server, interface, examples, durable persistence, and general autonomous orchestration remain deferred.
 
 ## Phase 1 public APIs
 
@@ -73,6 +74,20 @@ The public execution request names one known lifecycle action. The adapter selec
 - `createHumanApprovalRecord` is a trusted control-plane helper. The MCP tool never creates an approval and does not accept an actor field.
 - `startLoopbackMcpServer` exposes only `apply_candidate_patch({ contextId })` over local Streamable HTTP and rejects clients without the connector-only bearer token.
 - One approval ID is globally single-use within the registry, and one context consumes approval on its first application attempt whether that attempt succeeds or fails.
+
+## Phase 4 public APIs
+
+`packages/orchestrator` coordinates the existing boundaries without exposing raw command execution:
+
+- `intakeNodeProject` admits one canonical, clean, non-symlink Git root, resolves its exact `HEAD`, and constructs the existing `ProjectManifest` from closed Node.js policy identifiers.
+- `createCoordinatorPlan` and `validateCoordinatorPlan` define an exact structured plan containing ordered actor/action steps, declared and validation policy IDs, expected file scope, a file-count limit, public risk notes, and a timestamp. Unknown actions, undeclared policies, authority expansion, private reasoning, raw conversation history, and secrets fail closed.
+- `validateBuilderResult` accepts only public Builder identity, workspace identity, base revision, executed policy and evidence identifiers, canonical changed files, explicit completion or failure state, and timestamps.
+- `reviewCandidateEvidence` deterministically approves or rejects using the admitted base, expected scope, file-count limit, Builder result, candidate artifact, and exact declared validation evidence. The fixed Reviewer profile has no edit or application authority.
+- `createMissionOrchestrator` exposes `runMission`, `resumeMission`, `getMissionSummary`, and `getPendingApplicationContext`. The pending application context is available only after journal replay derives `awaiting_approval`; Phase 4 never creates an `ApprovalRecord` or registers an MCP application context itself.
+
+The controlled Phase 4 Builder pattern uses the already declared `npm-run-build` policy to perform one project-defined deterministic transformation in the isolated clone. The same declared build policy and required `npm-test` policy then run as validation through the existing TrueForge session. This is not a general file-editing language or autonomous coding loop.
+
+The existing hash-chained journal now also accepts a closed set of `mission.milestone` events. Milestones record public plan, workspace, Builder, validation, Reviewer, and candidate progress without changing state. Replay skips milestones when deriving state and continues to validate their exact shape, hash, ordering, actor, timestamp, and forbidden fields.
 
 ## Agent profiles
 
@@ -138,7 +153,7 @@ The target must be a canonical Git repository root with a clean working tree and
 
 TrueForge owns agent session persistence. ForgeOS Lite stores public mission contracts and emits timeline events through the server. The adapter maps TrueForge session, agent, tool, sandbox, and approval events into stable public contracts without exposing credentials or private chain-of-thought.
 
-Phase 1 implements only in-memory journal construction, verification, and replay. Phase 2 execution evidence and Phase 3 candidate, approval, and application evidence are returned to their callers but are not durably stored. The Phase 3 live proof uses the same journal to distinguish `awaiting_approval`, `applying`, and `completed`; `applying` is entered from the MCP callback only after TrueForge has resumed the approved tool and the exact human record has been validated. Filesystem journal persistence, the application server, and reconnection behavior remain deferred. A trusted journal anchor is required to detect removal of the final event because a hash chain alone cannot prove that its tail is complete.
+Phase 1 implements only in-memory journal construction, verification, and replay. Phase 2 execution evidence and Phase 3 candidate, approval, and application evidence are returned to their callers but are not durably stored. Phase 4 retains its plan, Builder result, validation summaries, candidate, pending application context, and replayed timeline in one in-memory orchestrator process. The Phase 3 live proof uses the same journal to distinguish `awaiting_approval`, `applying`, and `completed`; `applying` is entered from the MCP callback only after TrueForge has resumed the approved tool and the exact human record has been validated. Filesystem journal persistence, the application server, and reconnection behavior remain deferred. A trusted journal anchor is required to detect removal of the final event because a hash chain alone cannot prove that its tail is complete.
 
 ## Phase 2 runtime limits
 
@@ -155,6 +170,17 @@ Phase 1 implements only in-memory journal construction, verification, and replay
 - Final file opens reject a symlink at the file itself. A concurrently hostile process that swaps a parent directory after the final preflight remains outside the single-user Phase 3 guarantee; later phases need stronger operating-system isolation or directory-relative file descriptors.
 - Approval and application replay protection are in memory for one server process. Restart-safe approval consumption requires durable storage and remains deferred.
 - The local proof uses a configured model provider and the authenticated or explicitly identified human operating the TrueForge client. The MCP tool cannot infer, accept, or manufacture human identity.
+
+## Phase 4 orchestration limits
+
+- Intake supports one local Node.js Git project and one active mission at a time.
+- The only Builder transformation pattern is an argument-free declared `npm-run-build` policy in a fresh clone. General autonomous editing, Python, static projects, and policy arguments remain deferred.
+- The orchestrator fingerprints isolated Git metadata and every file or symlink in the TrueForge workspace outside the clone around Builder work. Empty provider-created runtime directories are normalized out of that comparison, while any outside file content or symlink still fails closed. TrueForge's sandbox remains the operating-system confinement boundary during command execution.
+- Candidate content is hashed immediately after Builder completion and recomputed after every declared validation policy. Validation must preserve that exact candidate, isolated Git metadata, and the outside-workspace fingerprint before Reviewer evaluation begins.
+- Reviewer validation requires the exact declared policy inventory, one successful runtime record per policy, mission and Builder-workspace binding, unique execution identities, and no reuse of Builder execution evidence. Builder proof must identify exactly the declared transformation policies with one evidence identity per policy.
+- The fixed Reviewer evaluates deterministic public evidence and does not run an open-ended model review.
+- Mission summaries and pending application contexts are in memory and do not survive process restart.
+- Phase 4 stops before human approval. Phase 3 remains the only application path.
 
 ## Language boundary
 

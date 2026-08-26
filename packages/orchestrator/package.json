@@ -1,0 +1,12 @@
+{
+  "name": "@forgeos-lite/orchestrator",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.js",
+  "dependencies": {
+    "@forgeos-lite/candidate-patch": "*",
+    "@forgeos-lite/contracts": "*",
+    "@forgeos-lite/core": "*",
+    "@forgeos-lite/runtime-trueforge": "*"
+  }
+}

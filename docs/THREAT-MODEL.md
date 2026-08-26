@@ -33,6 +33,9 @@
 | Credential leakage | Secret isolation and redacted structured logs | Repository and log scan |
 | Tool repetition after reconnect | Durable operation identity and terminal event state | Deferred beyond Phase 3 |
 | Sandbox escape | Canonical workspace checks and host marker test | Confinement probe |
+| Orchestration policy substitution | Exact plan schema and manifest-policy equality | Phase 4 Coordinator tests |
+| Builder scope expansion | Expected-path, file-count, Git-metadata, and workspace fingerprints | Phase 4 Builder adversarial tests |
+| Invalid evidence reaching approval | Fixed Reviewer criteria and journal-gated pending context | Phase 4 positive and negative proofs |
 
 ## Approval semantics
 
@@ -78,6 +81,21 @@ Internal reversible writes within the approved sandbox copy do not require repea
 - Approval is consumed on the first attempt. Replays, cross-candidate use, candidate or reviewer mutation, cross-project or cross-mission approval, nonhuman actors, rejected decisions, dirty targets, and stale revisions are covered by adversarial tests.
 - The negative live proof passes a second candidate through its own real TrueForge approval event, advances the disposable target base, and observes rejection before the reviewed file changes.
 
+## Implemented Phase 4 controls
+
+- Project intake requires one canonical, non-root, non-symlink local Git repository with a real `.git` directory, clean status, exact complete `HEAD`, Node.js type, and closed command-policy identifiers.
+- Mission authority must be a known subset of capabilities derived from the admitted manifest and must name the exact canonical expected file scope. Natural-language intent cannot widen authority.
+- Coordinator plans use exact fields, ordered closed actor/action pairs, exactly the manifest-declared policy IDs, exact validation policy IDs, bounded expected scope, a file-count limit, public risk notes, and no private fields.
+- Coordinator and Reviewer handoffs reuse the existing authority snapshot checks. The Coordinator cannot edit or apply, the Builder cannot approve or apply, and the Reviewer cannot edit or request application.
+- Every Builder mission uses a fresh clone at the admitted base below the TrueForge-created workspace. The original is snapshotted before work and rechecked after session and workspace cleanup.
+- Builder execution uses only the existing fixed runtime actions and declared Node.js policies. The controlled transformation is `npm-run-build`; declared build and test validation run separately afterward.
+- The orchestrator rejects no-op work, unexpected files, excessive file counts, symlink output, Git metadata mutation, writes outside the isolated clone, runtime failures, timeouts, validation inventory or content drift, and failed required policies. Every directory, file, and symlink visited by workspace fingerprinting counts toward a fixed traversal bound.
+- Builder results contain only stable public identities, policy and evidence identifiers, canonical changed files, explicit completion and failure state, and timestamps.
+- The fixed Reviewer rejects project or base mismatch, unsupported or invalid candidates, scope that differs from mission authority, excessive files, incomplete or undeclared Builder policy evidence, validation evidence from another mission or Builder workspace, any non-exact validation inventory, reused execution identities, and any failed required build or test.
+- Closed milestone events extend the existing hash-chained journal without creating another state machine. State remains derived solely from existing transitions during replay.
+- A pending application context becomes available only after cleanup, original-project verification, Reviewer approval, exact reviewed-candidate creation, and replay to `awaiting_approval`. No Phase 4 path creates human approval or applies a patch.
+- The positive live proof uses `gpt-5.4-mini` through real TrueForge 0.1.4, performs the controlled change and declared validation, and reaches `awaiting_approval`. The negative live proof completes Builder execution, causes `npm-test` to fail, records one validation-failure milestone, and confirms no candidate, pending application context, or original-project mutation.
+
 ## Deferred security controls
 
 - Node.js install, test, and build policies are implemented; Python and static policy execution remain deferred.
@@ -86,7 +104,7 @@ Internal reversible writes within the approved sandbox copy do not require repea
 - Multi-file application uses full preflight and best-effort rollback but is not a portable atomic filesystem transaction. A hostile concurrent parent-directory swap after final preflight requires a stronger later isolation boundary.
 - TrueForge 0.1.4 exposes combined sandbox command output rather than separate stdout and stderr fields. ForgeOS Lite preserves an empty stderr channel when no separate upstream value exists.
 - HTTP command dispatch is model-mediated. Substitution is detected from merged events and reported, while TrueForge's local sandbox remains the pre-execution host-confinement control.
-- No production security guarantee is made by the Phase 3 hackathon boundary.
+- Phase 4 orchestration is fixed and in memory. General autonomous agents, durable restart recovery, multi-project concurrency, and a production security guarantee remain deferred.
 
 ## Language and supply-chain content
 
