@@ -1,46 +1,9 @@
-import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { collectOwnedTextFiles } from "./owned-text-files.mjs";
+
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-
-const excludedDirectories = new Set([
-  ".git",
-  ".cache",
-  ".next",
-  "artifacts",
-  "build",
-  "coverage",
-  "dist",
-  "generated",
-  "node_modules",
-  "out",
-  "tmp",
-  "vendor"
-]);
-
-const scannedExtensions = new Set([
-  ".cjs",
-  ".css",
-  ".html",
-  ".js",
-  ".json",
-  ".jsx",
-  ".md",
-  ".mdx",
-  ".mjs",
-  ".py",
-  ".scss",
-  ".sh",
-  ".toml",
-  ".ts",
-  ".tsx",
-  ".txt",
-  ".yaml",
-  ".yml"
-]);
-
-const extensionlessFiles = new Set([".editorconfig", ".gitignore", "LICENSE"]);
 
 const encodedBlockedTerms = [
   "bsOjbw==",
@@ -67,7 +30,36 @@ const encodedBlockedTerms = [
   "cG9ydHVndcOqcw==",
   "YmVtLXZpbmRv",
   "ZXN0ZSByZXBvc2l0w7NyaW8=",
-  "cG9yIGZhdm9y"
+  "cG9yIGZhdm9y",
+  "ZXUgZ29zdG8gZGUgZXNjcmV2ZXIgY29kaWdv",
+  "Z29zdG8=",
+  "ZXNjcmV2ZXI=",
+  "Y29kaWdv",
+  "Y8OzZGlnbw==",
+  "YWx0ZXJhY29lcw==",
+  "YWx0ZXJhw6fDtWVz",
+  "bmFvIGZvaSBwb3NzaXZlbA==",
+  "bsOjbyBmb2kgcG9zc8OtdmVs",
+  "dGVudGFyIG5vdmFtZW50ZQ==",
+  "c2FsdmFyIGFsdGVyYWNvZXM=",
+  "c2FsdmFyIGFsdGVyYcOnw7Vlcw==",
+  "Y2xpcXVlIGFxdWk=",
+  "YmVtIHZpbmRv",
+  "ZW52aWFy",
+  "ZXhjbHVpcg==",
+  "YWRpY2lvbmFy",
+  "ZWRpdGFy",
+  "Y29uZmlybWFy",
+  "Y29udGludWFy",
+  "cGFnaW5h",
+  "cMOhZ2luYQ==",
+  "bWVuc2FnZW0=",
+  "cmVzdWx0YWRv",
+  "ZmFsaGE=",
+  "Y29uZXhhbw==",
+  "Y29uZXjDo28=",
+  "cmVwb3NpdG9yaW8=",
+  "cmVwb3NpdMOzcmlv"
 ];
 
 const blockedTerms = encodedBlockedTerms.map((value, index) => ({
@@ -75,11 +67,10 @@ const blockedTerms = encodedBlockedTerms.map((value, index) => ({
   value: Buffer.from(value, "base64").toString("utf8").toLowerCase()
 }));
 
-const unintendedLatinAccent = /[\u00c0-\u00ff\u0100-\u017f]/u;
-
-function isTextFile(filePath) {
-  const name = path.basename(filePath);
-  return extensionlessFiles.has(name) || scannedExtensions.has(path.extname(name).toLowerCase());
+function containsNonAsciiLatinLetter(text) {
+  return Array.from(text).some(
+    (character) => /[^\x00-\x7f]/u.test(character) && /\p{Script=Latin}/u.test(character)
+  );
 }
 
 function containsTerm(text, term) {
@@ -90,8 +81,8 @@ function containsTerm(text, term) {
     const before = offset === 0 ? "" : normalized[offset - 1];
     const afterIndex = offset + term.length;
     const after = afterIndex >= normalized.length ? "" : normalized[afterIndex];
-    const beforeIsLetter = /[a-z\u00c0-\u017f]/u.test(before);
-    const afterIsLetter = /[a-z\u00c0-\u017f]/u.test(after);
+    const beforeIsLetter = /\p{Letter}/u.test(before);
+    const afterIsLetter = /\p{Letter}/u.test(after);
 
     if (!beforeIsLetter && !afterIsLetter) {
       return true;
@@ -106,7 +97,7 @@ function containsTerm(text, term) {
 export function findLanguageViolations(text) {
   const violations = [];
 
-  if (unintendedLatinAccent.test(text)) {
+  if (containsNonAsciiLatinLetter(text)) {
     violations.push("Latin accented text");
   }
 
@@ -119,33 +110,11 @@ export function findLanguageViolations(text) {
   return violations;
 }
 
-async function collectFiles(directory) {
-  const entries = await readdir(directory, { withFileTypes: true });
-  const files = [];
-
-  for (const entry of entries) {
-    if (entry.isDirectory() && excludedDirectories.has(entry.name)) {
-      continue;
-    }
-
-    const entryPath = path.join(directory, entry.name);
-
-    if (entry.isDirectory()) {
-      files.push(...(await collectFiles(entryPath)));
-    } else if (entry.isFile() && isTextFile(entryPath)) {
-      files.push(entryPath);
-    }
-  }
-
-  return files;
-}
-
 export async function scanRepository(root = repositoryRoot) {
-  const files = await collectFiles(root);
+  const files = await collectOwnedTextFiles(root);
   const findings = [];
 
-  for (const filePath of files) {
-    const content = await readFile(filePath, "utf8");
+  for (const { filePath, content } of files) {
     const violations = findLanguageViolations(content);
 
     if (violations.length > 0) {
