@@ -15,11 +15,11 @@ Local evidence may be checked only after it has been verified. Video, platform, 
 
 ## Demo and verification
 
-- [ ] `npm run verify` passes on the final Phase 5 commit.
-- [ ] `npm run demo:check` passes on the recording machine.
-- [ ] Primary `npm run demo` allow flow succeeds from a clean checkout.
-- [ ] Real denial proof succeeds, or its deferral is documented.
-- [ ] Exact demo runtime, TrueForge version, and model are recorded in the pull request.
+- [x] `npm run verify` passes on the reviewed Phase 5 implementation commit.
+- [x] `npm run demo:check` passes on the proof machine.
+- [x] Primary `npm run demo` allow flow succeeds from a clean checkout.
+- [x] Real denial proof succeeds.
+- [x] Exact demo runtime, TrueForge version, and model are recorded in repository evidence.
 - [ ] Demo video is recorded.
 - [ ] Final video is below the submission platform's expected duration.
 - [ ] Video audio and terminal text are clear at normal playback size.

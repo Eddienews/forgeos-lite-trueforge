@@ -79,7 +79,7 @@ The terminal package is presentation and control-plane code only. It calls the e
 
 The fixture generator creates a tiny Git project from scratch for each run. Its declared build changes one greeting module, and its test accepts the baseline and expected demo sentence. The fixed Coordinator derives the public plan, the real TrueForge Builder runs the declared transformation and validation in a fresh clone, and the fixed Reviewer evaluates only structured evidence. The original is compared before approval and again after denial or application.
 
-See [docs/DEMO-SCRIPT.md](docs/DEMO-SCRIPT.md) for the approximately three-minute narration and [docs/SUBMISSION-CHECKLIST.md](docs/SUBMISSION-CHECKLIST.md) for release readiness.
+See [docs/DEMO-SCRIPT.md](docs/DEMO-SCRIPT.md) for the approximately three-minute narration, [docs/DEMO-EVIDENCE.md](docs/DEMO-EVIDENCE.md) for the exact live proof, and [docs/SUBMISSION-CHECKLIST.md](docs/SUBMISSION-CHECKLIST.md) for release readiness.
 
 ## Verification and credential safety
 
