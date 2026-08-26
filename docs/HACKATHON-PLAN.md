@@ -50,12 +50,15 @@ Phase 2 explicitly defers MCP tools, approval-required patch application, candid
 
 ### PR 3: Reviewed candidate patch approval
 
-Branch: `feat/approved-patch-application`
+Branch: `feat/candidate-patch-approval-gate`
 
-- Candidate patch creation and hash binding.
-- Approval-required `apply_candidate_patch` tool.
-- Canonical path, symlink, replay, and substitution defenses.
-- Deny, allow, restart, and audit evidence.
+- Deterministic ordinary-text candidate creation and hash binding.
+- Reviewer verdict and explicit human `ApprovalRecord` binding.
+- Approval-required local `apply_candidate_patch` MCP tool using the installed TrueForge 0.1.4 mechanism.
+- Canonical path, symlink, replay, substitution, dirty-tree, and stale-base defenses.
+- Positive TrueForge approval evidence and negative live base-drift evidence.
+
+Phase 3 intentionally keeps approval consumption in memory and does not claim restart recovery. Full Coordinator, Builder, and Reviewer runtimes, durable storage, the backend, the interface, automated commits, remote Git mutation, cloud, deployment, teams, billing, marketplace work, and ForgeOS Browser remain deferred.
 
 ### PR 4: Mission Control, example, and submission evidence
 

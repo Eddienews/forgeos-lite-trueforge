@@ -8,7 +8,7 @@ import {
   validateMissionTransition,
   verifyMissionJournal
 } from "../../packages/core/src/index.js";
-import { sha256 } from "../../packages/contracts/src/index.js";
+import { reviewerEvidenceHash, sha256 } from "../../packages/contracts/src/index.js";
 
 const missionId = "mission-1";
 const patchHash = "b".repeat(64);
@@ -36,15 +36,19 @@ function candidate() {
     affectedFiles: ["src/index.js"],
     testEvidence: testEvidence(),
     reviewerVerdict: {
+      reviewId: "review-1",
+      reviewerRole: "reviewer",
       decision: "approved",
       candidateSha256: patchHash,
-      evidenceSha256: evidenceHash
+      evidenceSha256: evidenceHash,
+      createdAt: timestamp(1)
     },
     createdAt: timestamp(1)
   };
 }
 
 function approval() {
+  const reviewerVerdict = candidate().reviewerVerdict;
   return {
     schemaVersion: "1",
     approvalId: "approval-1",
@@ -53,10 +57,33 @@ function approval() {
     projectId: "project-1",
     baseRevision: gitRevision,
     candidateSha256: patchHash,
-    reviewerEvidenceSha256: evidenceHash,
+    reviewerEvidenceSha256: reviewerEvidenceHash(reviewerVerdict),
     actor: "human",
+    actorId: "human-1",
+    approvalContext: {
+      mechanism: "trueforge.tool_approval",
+      sessionId: "session-1",
+      threadId: "thread-1",
+      toolCallId: "call-1",
+      approvalEventId: "approval-event-1"
+    },
     decision: "approved",
     createdAt: timestamp(2)
+  };
+}
+
+function applicationEvidence(candidateSha256 = patchHash) {
+  return {
+    schemaVersion: "1",
+    missionId,
+    candidateId: "candidate-1",
+    candidateSha256,
+    projectId: "project-1",
+    baseRevision: gitRevision,
+    workingTreeStatus: [{ operation: "modify", path: "src/index.js" }],
+    changedFiles: ["src/index.js"],
+    appliedAt: timestamp(9),
+    success: true
   };
 }
 
@@ -83,11 +110,7 @@ function appendLegalLifecycle(journal = new InMemoryMissionJournal()) {
       "applying",
       "completed",
       {
-        applicationEvidence: {
-          candidateSha256: patchHash,
-          appliedRevision: "d".repeat(40),
-          observedAt: timestamp(9)
-        }
+        applicationEvidence: applicationEvidence()
       }
     ]
   ];
@@ -229,7 +252,7 @@ test("rejects changing the candidate after entering awaiting approval", () => {
 test("requires structured application evidence before completion", () => {
   assert.throws(
     () => validateMissionTransition("applying", { fromState: "applying", toState: "completed" }),
-    /applicationEvidence/u
+    /ApplicationEvidence/u
   );
 });
 
@@ -241,14 +264,28 @@ test("binds completion evidence to the applied candidate hash", () => {
         eventInput(8, "mission.transitioned", {
           fromState: "applying",
           toState: "completed",
-          applicationEvidence: {
-            candidateSha256: "f".repeat(64),
-            appliedRevision: "d".repeat(40),
-            observedAt: timestamp(9)
-          }
+          applicationEvidence: applicationEvidence("f".repeat(64))
         })
       ),
     /does not match the applied candidate hash/u
+  );
+});
+
+test("binds completion evidence to the authorized changed-file inventory", () => {
+  const journal = appendThroughApplying();
+  const evidence = applicationEvidence();
+  evidence.workingTreeStatus = [{ operation: "modify", path: "src/other.js" }];
+  evidence.changedFiles = ["src/other.js"];
+  assert.throws(
+    () =>
+      journal.append(
+        eventInput(8, "mission.transitioned", {
+          fromState: "applying",
+          toState: "completed",
+          applicationEvidence: evidence
+        })
+      ),
+    /changed-file inventory does not match/u
   );
 });
 

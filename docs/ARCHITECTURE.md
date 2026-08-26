@@ -14,13 +14,14 @@ packages/
   contracts/              Public schemas and event contracts
   core/                   Mission state and handoff rules
   runtime-trueforge/      TrueForge session and execution boundary
-  project-mcp/            Project inspection and patch tools
+  candidate-patch/        Deterministic reviewed text changes
+  mcp-server/             Approval-gated candidate application
 examples/
   sample-project/         Reproducible demonstration project
 docs/                     Architecture, security, and event material
 ```
 
-Phase 1 implements `packages/contracts` and `packages/core`. Phase 2 implements `packages/runtime-trueforge`. The remaining workspace directories are deferred to later reviewed pull requests.
+Phase 1 implements `packages/contracts` and `packages/core`. Phase 2 implements `packages/runtime-trueforge`. Phase 3 implements `packages/candidate-patch` and `packages/mcp-server`. The application server, interface, examples, and general orchestration remain deferred.
 
 ## Phase 1 public APIs
 
@@ -55,6 +56,23 @@ These Phase 1 APIs do not execute commands, access the filesystem, connect to Tr
 - `runtimeCommandFingerprint` canonicalizes only the public structured command representation.
 
 The public execution request names one known lifecycle action. The adapter selects the corresponding command from the already validated Phase 1 manifest and derives fixed argv internally. Phase 2 implements the Node.js policies `npm-ci`, `npm-test`, and `npm-run-build` with argument-free mappings. Policy-specific argument allowlists remain deferred so npm configuration cannot redirect execution. The adapter exposes no shell-string, raw-command, arbitrary-module, or unsafe bypass option.
+
+## Phase 3 public APIs
+
+`packages/candidate-patch` provides the narrow patch surface:
+
+- `generateCandidateArtifact` compares two repositories at one exact commit and emits canonical add, modify, and delete operations for ordinary bounded UTF-8 text files.
+- `validateCandidateArtifact`, `serializeCandidateArtifact`, and `candidateArtifactSha256` enforce exact fields, sorted unique paths, canonical line endings, and content hashes.
+- `createReviewerVerdict` binds the closed reviewer decision to the candidate artifact and canonical test evidence.
+- `createReviewedCandidatePatch` uses the existing `CandidatePatch` contract instead of defining a competing candidate type.
+- `applyCandidateArtifact` performs two complete preflight passes, applies only the prepared plan, verifies the resulting content and changed-file inventory, preserves the Git head, and returns uncommitted working-tree application evidence. A failed mutation or final verification triggers best-effort rollback.
+
+`packages/mcp-server` provides the irreversible boundary:
+
+- `CandidateApplicationRegistry` seals candidate, artifact, target root, reviewer identity, and human approval outside model-controlled tool arguments. A recorded decision remains pending until the trusted control plane confirms the exact TrueForge session, thread, tool-call, and approval-event binding after TrueForge accepts the allow resume.
+- `createHumanApprovalRecord` is a trusted control-plane helper. The MCP tool never creates an approval and does not accept an actor field.
+- `startLoopbackMcpServer` exposes only `apply_candidate_patch({ contextId })` over local Streamable HTTP and rejects clients without the connector-only bearer token.
+- One approval ID is globally single-use within the registry, and one context consumes approval on its first application attempt whether that attempt succeeds or fails.
 
 ## Agent profiles
 
@@ -108,13 +126,19 @@ Sandbox-only tools operate exclusively on the prepared copy:
 - `run_declared_build`
 - `create_candidate_patch`
 
-The only real-project write tool is `apply_candidate_patch`. Its MCP annotations and TrueForge configuration must require approval. Before applying, it recomputes the patch hash, revalidates paths and symlinks, verifies review evidence, checks replay state, and displays affected files and test results.
+The only implemented real-project write tool is `apply_candidate_patch`. It declares the standard MCP hints `readOnlyHint: false`, `destructiveHint: true`, `idempotentHint: false`, and `openWorldHint: false`. The installed TrueForge 0.1.4 `AgentSpec` attaches the configured connector with `require_approval_for_tools: ["apply_candidate_patch"]`. TrueForge then emits `tool.approval_required` and resumes the pending tool call only from a human `user.tool_approval` input containing the exact thread and tool-call identifiers.
+
+TrueForge 0.1.4 accepts configured MCP connectors with `type: "remote"`; its installed schema has no stdio connector variant. Phase 3 therefore uses Streamable HTTP on `127.0.0.1` or `::1` only. A random bearer token is stored in the TrueForge connector header and required by the MCP endpoint, preventing direct unauthenticated loopback calls. The tool receives only a context ID. Candidate data, project root, and `ApprovalRecord` are server-side sealed values and are all recomputed or revalidated immediately before mutation.
+
+The ApprovalRecord contains an `approvalContext` with the exact TrueForge session, thread, tool-call, and `tool.approval_required` event identifiers. Recording the human decision does not arm it. The MCP request waits while the control plane sends `user.tool_approval`; only after TrueForge accepts that resume does an exact context confirmation make the record usable. A failed resume leaves the candidate unapplied.
+
+The target must be a canonical Git repository root with a clean working tree and `HEAD` exactly equal to the candidate base revision. Ignored additions, symlink components, Git internals, binary content, submodules, executable modes, unsupported Git objects, and noncanonical paths fail closed. No commit, push, reset, force operation, tag, branch, or remote mutation is performed.
 
 ## Data and persistence
 
 TrueForge owns agent session persistence. ForgeOS Lite stores public mission contracts and emits timeline events through the server. The adapter maps TrueForge session, agent, tool, sandbox, and approval events into stable public contracts without exposing credentials or private chain-of-thought.
 
-Phase 1 implements only in-memory journal construction, verification, and replay. Phase 2 execution evidence is returned to its caller but is not durably stored. Filesystem journal persistence, the server, and reconnection behavior remain deferred. A trusted journal anchor is required to detect removal of the final event because a hash chain alone cannot prove that its tail is complete.
+Phase 1 implements only in-memory journal construction, verification, and replay. Phase 2 execution evidence and Phase 3 candidate, approval, and application evidence are returned to their callers but are not durably stored. The Phase 3 live proof uses the same journal to distinguish `awaiting_approval`, `applying`, and `completed`; `applying` is entered from the MCP callback only after TrueForge has resumed the approved tool and the exact human record has been validated. Filesystem journal persistence, the application server, and reconnection behavior remain deferred. A trusted journal anchor is required to detect removal of the final event because a hash chain alone cannot prove that its tail is complete.
 
 ## Phase 2 runtime limits
 
@@ -123,7 +147,14 @@ Phase 1 implements only in-memory journal construction, verification, and replay
 - TrueForge 0.1.4 returns combined command output in its sandbox tool response. The adapter exposes that response as stdout and keeps stderr empty when the upstream response has no separate stderr channel.
 - Command dispatch through the HTTP driver is model-mediated. The driver compares the merged TrueForge tool call with the exact derived command, working directory, and environment and reports any substitution as a runtime failure. The local sandbox remains the confinement boundary.
 - Startup validation failures trigger a bounded session cleanup attempt. Failed timeout cancellation leaves the session failed, and a transient shutdown failure can be retried without admitting more execution.
-- Durable evidence, restart recovery, approval-required patch application, and non-Node policy execution remain deferred.
+- Durable evidence, restart recovery, and non-Node policy execution remain deferred.
+
+## Phase 3 application limits
+
+- The application plan is validated twice before its first write. Writes are sequential because Node.js does not provide a portable multi-file atomic filesystem transaction; any failure triggers reverse-order best-effort rollback and consumes the approval.
+- Final file opens reject a symlink at the file itself. A concurrently hostile process that swaps a parent directory after the final preflight remains outside the single-user Phase 3 guarantee; later phases need stronger operating-system isolation or directory-relative file descriptors.
+- Approval and application replay protection are in memory for one server process. Restart-safe approval consumption requires durable storage and remains deferred.
+- The local proof uses a configured model provider and the authenticated or explicitly identified human operating the TrueForge client. The MCP tool cannot infer, accept, or manufacture human identity.
 
 ## Language boundary
 
