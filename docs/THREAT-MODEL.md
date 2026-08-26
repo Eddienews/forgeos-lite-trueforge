@@ -28,10 +28,10 @@
 | Authority expansion | Known capability allowlist plus subset validation | Profile and handoff escalation tests |
 | Journal tampering | Canonical JSON, SHA-256 chain, continuous sequence, and trusted anchor | Deletion, insertion, reordering, and mutation tests |
 | Private reasoning persistence | Recursive forbidden-field validation | Nested-field adversarial tests |
-| Duplicate or replayed application | Idempotency key and durable application record | Replay test |
+| Duplicate or replayed application | Sealed context and single-use in-process approval record | Replay test |
 | Unauthorized real-project write | Read-only access plus one approval-required tool | Deny and allow traces |
 | Credential leakage | Secret isolation and redacted structured logs | Repository and log scan |
-| Tool repetition after reconnect | Persistent operation identity and terminal event state | Restart test |
+| Tool repetition after reconnect | Durable operation identity and terminal event state | Deferred beyond Phase 3 |
 | Sandbox escape | Canonical workspace checks and host marker test | Confinement probe |
 
 ## Approval semantics
@@ -64,15 +64,28 @@ Internal reversible writes within the approved sandbox copy do not require repea
 - Node.js policy arguments fail closed in Phase 2, preventing npm options such as external prefixes, configuration files, or script-shell overrides from redirecting execution.
 - A live TrueForge 0.1.4 proof runs `npm test` in a disposable local sandbox, creates one fixture result file, captures exit and output evidence, verifies containment, and closes the session.
 
+## Implemented Phase 3 controls
+
+- Candidate generation reads a clean original repository at one complete commit and compares it with a separate Builder repository at that same commit. The original remains unchanged until approved application.
+- Candidate operations are exact-key, sorted, unique, content-addressed add, modify, or delete records for bounded canonical UTF-8 text. Traversal, absolute paths, null bytes, Git internals, shell-like metadata, binary data, symlinks, submodules, executable modes, and unsupported Git objects fail closed.
+- The reviewer verdict identifies the Reviewer role, uses a closed approved/rejected decision, and binds both the candidate artifact hash and canonical test-evidence hash. Unknown, reasoning, conversation, and secret fields are rejected.
+- The human `ApprovalRecord` binds mission, candidate, project, base revision, candidate hash, complete reviewer-verdict hash, actor identity, decision, and time. The MCP tool cannot create the record or accept actor-controlled arguments.
+- The MCP server binds only to loopback and exposes one destructive non-idempotent tool with a strict `{ contextId }` input. Candidate, root, artifact, and approval values remain sealed in the server registry.
+- The exact TrueForge 0.1.4 configuration names `apply_candidate_patch` in `require_approval_for_tools`. The positive live proof captures `tool.approval_required`, verifies no pre-approval write, resumes with `user.tool_approval`, and observes one successful application.
+- Two complete preflight passes verify the candidate, reviewer, approval, hashes, configured canonical root, exact Git head, clean tree, safe paths, target content, and full operation plan. A base change between checks fails closed.
+- Application preserves the Git head, verifies every result and the complete changed-file inventory, returns structured uncommitted working-tree evidence, and creates no commit or remote mutation.
+- Approval is consumed on the first attempt. Replays, cross-candidate use, candidate or reviewer mutation, cross-project or cross-mission approval, nonhuman actors, rejected decisions, dirty targets, and stale revisions are covered by adversarial tests.
+- The negative live proof records an exact approval, advances the disposable target base, invokes the real MCP tool, and observes rejection before the reviewed file changes.
+
 ## Deferred security controls
 
-- The hackathon TrueForge version has not yet demonstrated the approval-required MCP path for this project.
 - Node.js install, test, and build policies are implemented; Python and static policy execution remain deferred.
-- Symlink-aware runtime workspace containment is implemented, but approved patch application to an external project is not.
 - The journal is in memory only; durable storage and trusted anchor persistence are not implemented.
+- Approval consumption and application context are in memory only; restart-safe replay protection is not implemented.
+- Multi-file application uses full preflight and best-effort rollback but is not a portable atomic filesystem transaction. A hostile concurrent parent-directory swap after final preflight requires a stronger later isolation boundary.
 - TrueForge 0.1.4 exposes combined sandbox command output rather than separate stdout and stderr fields. ForgeOS Lite preserves an empty stderr channel when no separate upstream value exists.
 - HTTP command dispatch is model-mediated. Substitution is detected from merged events and reported, while TrueForge's local sandbox remains the pre-execution host-confinement control.
-- No production security guarantee is made by the Phase 2 foundation.
+- No production security guarantee is made by the Phase 3 hackathon boundary.
 
 ## Language and supply-chain content
 

@@ -6,6 +6,7 @@ import {
   canonicalJson,
   hashesEqual,
   sha256,
+  validateApplicationEvidence,
   validateApprovalRecord,
   validateCandidatePatch
 } from "../../contracts/src/index.js";
@@ -112,20 +113,8 @@ function assertTransitionEvidence(payload, context) {
     assertEvidenceMission(payload.approval, context.missionId, "applying approval");
   }
   if (payload.toState === "completed") {
-    assertExactKeys(
-      payload.applicationEvidence,
-      ["candidateSha256", "appliedRevision", "observedAt"],
-      [],
-      "applicationEvidence"
-    );
-    assertSha256(payload.applicationEvidence.candidateSha256, "applicationEvidence.candidateSha256");
-    if (
-      typeof payload.applicationEvidence.appliedRevision !== "string" ||
-      !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(payload.applicationEvidence.appliedRevision)
-    ) {
-      fail("applicationEvidence.appliedRevision must be a complete Git revision hash.");
-    }
-    assertTimestamp(payload.applicationEvidence.observedAt, "applicationEvidence.observedAt");
+    validateApplicationEvidence(payload.applicationEvidence);
+    assertEvidenceMission(payload.applicationEvidence, context.missionId, "applicationEvidence");
   }
   if (payload.toState === "blocked") {
     assertExactKeys(payload.blocked, ["code", "summary", "nextActor"], [], "blocked");
@@ -194,6 +183,16 @@ function validateTransitionPayload(currentState, payload, context, enforceContin
       )
     ) {
       fail("completion evidence does not match the applied candidate hash.");
+    }
+    if (context.expectedCandidate !== undefined) {
+      const expected = context.expectedCandidate;
+      if (
+        payload.applicationEvidence.candidateId !== expected.candidateId ||
+        payload.applicationEvidence.projectId !== expected.projectId ||
+        payload.applicationEvidence.baseRevision !== expected.baseRevision
+      ) {
+        fail("completion evidence does not match the authorized candidate context.");
+      }
     }
   }
   assertNoForbiddenFields(payload, "transition payload");
@@ -370,7 +369,7 @@ export function replayMissionJournal(events, options = {}) {
   }
   let state = "draft";
   let pendingCandidateBinding = null;
-  let applyingCandidateSha256 = null;
+  let applyingCandidate = null;
   for (const event of events.slice(1)) {
     if (event.eventType !== "mission.transitioned") {
       fail(`Unexpected event after mission creation: ${event.eventType}.`);
@@ -380,14 +379,15 @@ export function replayMissionJournal(events, options = {}) {
       context.expectedCandidateBinding = pendingCandidateBinding ?? undefined;
     }
     if (event.payload.toState === "completed") {
-      context.expectedCandidateSha256 = applyingCandidateSha256 ?? undefined;
+      context.expectedCandidateSha256 = applyingCandidate?.patchSha256;
+      context.expectedCandidate = applyingCandidate ?? undefined;
     }
     state = validateMissionTransition(state, event.payload, context);
     if (event.payload.toState === "awaiting_approval") {
       pendingCandidateBinding = candidateBindingHash(event.payload.candidate);
     }
     if (event.payload.toState === "applying") {
-      applyingCandidateSha256 = event.payload.candidate.patchSha256;
+      applyingCandidate = structuredClone(event.payload.candidate);
       pendingCandidateBinding = null;
     }
   }

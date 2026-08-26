@@ -9,9 +9,11 @@ import {
   assertUniqueApprovalId,
   canonicalJson,
   getAgentProfile,
+  reviewerEvidenceHash,
   sha256,
   validateAgentProfile,
   validateApprovalRecord,
+  validateApplicationEvidence,
   validateCandidatePatch,
   validateHandoff,
   validateMission,
@@ -90,15 +92,19 @@ function validCandidate() {
     affectedFiles: ["src/index.js"],
     testEvidence: validTestEvidence(),
     reviewerVerdict: {
+      reviewId: "review-1",
+      reviewerRole: "reviewer",
       decision: "approved",
       candidateSha256: patchHash,
-      evidenceSha256: evidenceHash
+      evidenceSha256: evidenceHash,
+      createdAt: timestamp
     },
     createdAt: timestamp
   };
 }
 
 function validApproval() {
+  const reviewerVerdict = validCandidate().reviewerVerdict;
   return {
     schemaVersion: "1",
     approvalId: "approval-1",
@@ -107,8 +113,9 @@ function validApproval() {
     projectId: "project-1",
     baseRevision: gitRevision,
     candidateSha256: patchHash,
-    reviewerEvidenceSha256: evidenceHash,
+    reviewerEvidenceSha256: reviewerEvidenceHash(reviewerVerdict),
     actor: "human",
+    actorId: "human-1",
     decision: "approved",
     createdAt: timestamp
   };
@@ -276,6 +283,12 @@ test("rejects incomplete hashes in artifacts and candidates", () => {
   assert.throws(() => validateCandidatePatch(candidate), /complete SHA-256/u);
 });
 
+test("rejects duplicate candidate changed-file entries", () => {
+  const candidate = validCandidate();
+  candidate.affectedFiles = ["src/index.js", "src/index.js"];
+  assert.throws(() => validateCandidatePatch(candidate), /duplicate entries/u);
+});
+
 test("binds reviewer verdict and human approval to the candidate hash", () => {
   assert.equal(approvalMatchesCandidate(validApproval(), validCandidate()), true);
   const mutatedCandidate = validCandidate();
@@ -312,6 +325,38 @@ test("rejects duplicate approval identifiers", () => {
   assert.throws(
     () => assertUniqueApprovalId(validApproval(), [validApproval()]),
     /Duplicate approval identifier/u
+  );
+});
+
+test("rejects missing human identity and forbidden approval fields", () => {
+  const missingActorId = validApproval();
+  delete missingActorId.actorId;
+  assert.throws(() => validateApprovalRecord(missingActorId), /actorId/u);
+  const secretBearing = { ...validApproval(), apiKey: "secret-value" };
+  assert.throws(() => validateApprovalRecord(secretBearing), /unknown field|forbidden/u);
+});
+
+test("rejects reasoning and secret fields in application evidence", () => {
+  const evidence = {
+    schemaVersion: "1",
+    missionId: "mission-1",
+    candidateId: "candidate-1",
+    candidateSha256: patchHash,
+    projectId: "project-1",
+    baseRevision: gitRevision,
+    workingTreeStatus: [{ operation: "modify", path: "src/index.js" }],
+    changedFiles: ["src/index.js"],
+    appliedAt: timestamp,
+    success: true
+  };
+  assert.equal(validateApplicationEvidence(evidence).success, true);
+  assert.throws(
+    () => validateApplicationEvidence({ ...evidence, chainOfThought: "private" }),
+    /unknown field|forbidden/u
+  );
+  assert.throws(
+    () => validateApplicationEvidence({ ...evidence, accessToken: "secret" }),
+    /unknown field|forbidden/u
   );
 });
 

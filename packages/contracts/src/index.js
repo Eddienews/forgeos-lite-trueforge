@@ -18,9 +18,14 @@ import {
 export {
   assertAuthoritySubset,
   assertCommandToken,
+  assertExactKeys,
+  assertIsoTimestamp,
+  assertNonEmptyString,
   assertNoForbiddenFields,
+  assertPlainObject,
   assertSafeRelativePath,
   assertSha256,
+  assertStringArray,
   canonicalJson,
   hashesEqual,
   sha256
@@ -201,6 +206,15 @@ function assertArtifact(value, label) {
   assertExactKeys(value, ["path", "sha256"], [], label);
   assertSafeRelativePath(value.path, `${label}.path`);
   assertSha256(value.sha256, `${label}.sha256`);
+}
+
+function assertCanonicalPathInventory(value, label) {
+  assertStringArray(value, label, { maximumItems: 1000 });
+  value.forEach((entry, index) => assertSafeRelativePath(entry, `${label}[${index}]`));
+  const sorted = [...value].sort((left, right) => left.localeCompare(right));
+  if (canonicalJson(value) !== canonicalJson(sorted)) {
+    fail(`${label} must use canonical path ordering.`);
+  }
 }
 
 /** Validate and return a project manifest with fail-closed command policies. */
@@ -397,22 +411,9 @@ export function validateCandidatePatch(value) {
   }
   assertSafeRelativePath(value.patchPath, "CandidatePatch.patchPath");
   assertSha256(value.patchSha256, "CandidatePatch.patchSha256");
-  assertStringArray(value.affectedFiles, "CandidatePatch.affectedFiles", { maximumItems: 1000 });
-  value.affectedFiles.forEach((entry, index) =>
-    assertSafeRelativePath(entry, `CandidatePatch.affectedFiles[${index}]`)
-  );
+  assertCanonicalPathInventory(value.affectedFiles, "CandidatePatch.affectedFiles");
   assertEvidenceArray(value.testEvidence, "CandidatePatch.testEvidence");
-  assertExactKeys(
-    value.reviewerVerdict,
-    ["decision", "candidateSha256", "evidenceSha256"],
-    [],
-    "CandidatePatch.reviewerVerdict"
-  );
-  if (!new Set(["approved", "rejected"]).has(value.reviewerVerdict.decision)) {
-    fail("CandidatePatch.reviewerVerdict.decision is invalid.");
-  }
-  assertSha256(value.reviewerVerdict.candidateSha256, "CandidatePatch.reviewerVerdict.candidateSha256");
-  assertSha256(value.reviewerVerdict.evidenceSha256, "CandidatePatch.reviewerVerdict.evidenceSha256");
+  validateReviewerVerdict(value.reviewerVerdict);
   if (!hashesEqual(value.patchSha256, value.reviewerVerdict.candidateSha256)) {
     fail("CandidatePatch reviewer verdict is not bound to the patch hash.");
   }
@@ -422,6 +423,41 @@ export function validateCandidatePatch(value) {
   assertIsoTimestamp(value.createdAt, "CandidatePatch.createdAt");
   assertNoForbiddenFields(value, "CandidatePatch");
   return value;
+}
+
+/** Validate a closed reviewer decision bound to candidate and test-evidence identity. */
+export function validateReviewerVerdict(value) {
+  assertExactKeys(
+    value,
+    [
+      "reviewId",
+      "reviewerRole",
+      "decision",
+      "candidateSha256",
+      "evidenceSha256",
+      "createdAt"
+    ],
+    [],
+    "ReviewerVerdict"
+  );
+  assertIdentifier(value.reviewId, "ReviewerVerdict.reviewId");
+  if (value.reviewerRole !== "reviewer") {
+    fail("ReviewerVerdict.reviewerRole must be reviewer.");
+  }
+  if (!new Set(["approved", "rejected"]).has(value.decision)) {
+    fail("ReviewerVerdict.decision is invalid.");
+  }
+  assertSha256(value.candidateSha256, "ReviewerVerdict.candidateSha256");
+  assertSha256(value.evidenceSha256, "ReviewerVerdict.evidenceSha256");
+  assertIsoTimestamp(value.createdAt, "ReviewerVerdict.createdAt");
+  assertNoForbiddenFields(value, "ReviewerVerdict");
+  return value;
+}
+
+/** Return the canonical public identity of one reviewer decision. */
+export function reviewerEvidenceHash(value) {
+  validateReviewerVerdict(value);
+  return sha256(value);
 }
 
 /** Validate an explicit human decision bound to one candidate hash. */
@@ -438,6 +474,7 @@ export function validateApprovalRecord(value) {
       "candidateSha256",
       "reviewerEvidenceSha256",
       "actor",
+      "actorId",
       "decision",
       "createdAt"
     ],
@@ -457,6 +494,7 @@ export function validateApprovalRecord(value) {
   if (value.actor !== "human") {
     fail("ApprovalRecord.actor must be the human actor.");
   }
+  assertIdentifier(value.actorId, "ApprovalRecord.actorId");
   if (!new Set(["approved", "rejected"]).has(value.decision)) {
     fail("ApprovalRecord.decision is invalid.");
   }
@@ -488,6 +526,57 @@ export function approvalMatchesCandidate(approval, candidate) {
     approval.projectId === candidate.projectId &&
     approval.baseRevision === candidate.baseRevision &&
     hashesEqual(approval.candidateSha256, candidate.patchSha256) &&
-    hashesEqual(approval.reviewerEvidenceSha256, candidate.reviewerVerdict.evidenceSha256)
+    hashesEqual(approval.reviewerEvidenceSha256, reviewerEvidenceHash(candidate.reviewerVerdict))
   );
+}
+
+/** Validate deterministic evidence for an uncommitted working-tree application. */
+export function validateApplicationEvidence(value) {
+  assertExactKeys(
+    value,
+    [
+      ...schemaVersionFields,
+      "missionId",
+      "candidateId",
+      "candidateSha256",
+      "projectId",
+      "baseRevision",
+      "workingTreeStatus",
+      "changedFiles",
+      "appliedAt",
+      "success"
+    ],
+    [],
+    "ApplicationEvidence"
+  );
+  assertSchemaVersion(value, "ApplicationEvidence");
+  assertIdentifier(value.missionId, "ApplicationEvidence.missionId");
+  assertIdentifier(value.candidateId, "ApplicationEvidence.candidateId");
+  assertSha256(value.candidateSha256, "ApplicationEvidence.candidateSha256");
+  assertIdentifier(value.projectId, "ApplicationEvidence.projectId");
+  if (typeof value.baseRevision !== "string" || !sourceRevisionPattern.test(value.baseRevision)) {
+    fail("ApplicationEvidence.baseRevision must be a complete Git revision hash.");
+  }
+  assertCanonicalPathInventory(value.changedFiles, "ApplicationEvidence.changedFiles");
+  if (!Array.isArray(value.workingTreeStatus) || value.workingTreeStatus.length > 1000) {
+    fail("ApplicationEvidence.workingTreeStatus must contain at most 1000 entries.");
+  }
+  const statusPaths = [];
+  for (const [index, entry] of value.workingTreeStatus.entries()) {
+    assertExactKeys(entry, ["operation", "path"], [], `ApplicationEvidence.workingTreeStatus[${index}]`);
+    if (!new Set(["add", "modify", "delete"]).has(entry.operation)) {
+      fail(`ApplicationEvidence.workingTreeStatus[${index}].operation is unknown.`);
+    }
+    assertSafeRelativePath(entry.path, `ApplicationEvidence.workingTreeStatus[${index}].path`);
+    statusPaths.push(entry.path);
+  }
+  if (canonicalJson(statusPaths) !== canonicalJson(value.changedFiles)) {
+    fail("ApplicationEvidence working-tree status must match changedFiles exactly.");
+  }
+  assertIsoTimestamp(value.appliedAt, "ApplicationEvidence.appliedAt");
+  if (value.success !== true) {
+    fail("ApplicationEvidence.success must be true.");
+  }
+  assertNoForbiddenFields(value, "ApplicationEvidence");
+  return value;
 }
