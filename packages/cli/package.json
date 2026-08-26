@@ -1,0 +1,13 @@
+{
+  "name": "@forgeos-lite/cli",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.js",
+  "dependencies": {
+    "@forgeos-lite/candidate-patch": "*",
+    "@forgeos-lite/mcp-server": "*",
+    "@forgeos-lite/orchestrator": "*",
+    "@forgeos-lite/runtime-trueforge": "*",
+    "env-paths": "^4.0.0"
+  }
+}
