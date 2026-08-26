@@ -16,10 +16,10 @@ ForgeOS Lite uses TrueForge as the visible central harness. A Coordinator plans 
 
 - One local user.
 - One Git project at a time.
-- Node.js, Python, and static application manifests.
+- One Node.js application manifest with fixed build and test policies.
 - Coordinator, Builder, and Reviewer profiles.
-- Timeline with state, agent, activity, duration, and next action.
-- Persistent sessions across refresh and reconnection.
+- Public mission milestones with state, agent, activity, and next action.
+- In-memory mission and approval state for one process lifetime.
 - Candidate patch generation and approved application.
 
 ## Non-goals
@@ -33,15 +33,14 @@ ForgeOS Lite uses TrueForge as the visible central harness. A Coordinator plans 
 
 ## Success criteria
 
-1. TrueForge visibly manages the model, session, tools, sandbox, and persistence.
+1. TrueForge visibly manages the model, session, tools, and sandbox.
 2. The real project receives no writes before one explicit approval.
 3. Declared tests and builds run in the sandbox copy.
 4. The Reviewer sees the exact patch and evidence later presented for approval.
 5. A changed or replayed patch is rejected.
-6. Refresh and reconnection preserve session and timeline state without repeating a tool call.
+6. The terminal demo visibly separates candidate preparation, human approval, and application.
 7. The public repository is reproducible and records Qodo review evidence for every substantive pull request.
 
 ## Repository language
 
 All owned content and product-generated artifacts default to English. The repository accepts no Portuguese translations, bilingual content, comments, examples, interface strings, logs, fixtures, branch names, commit messages, pull-request text, Qodo responses, demo materials, or sample data.
-

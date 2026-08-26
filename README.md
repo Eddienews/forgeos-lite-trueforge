@@ -1,72 +1,118 @@
-# ForgeOS Lite — TrueForge Hackathon Edition
+# ForgeOS Lite — TrueForge Edition
 
-ForgeOS Lite is an open-source, local-first harness for controlled changes to one Git project at a time. TrueForge is the central runtime for model access, sessions, tools, sandbox execution, and persistence.
+ForgeOS Lite is a local AI coding harness that coordinates planning, isolated execution, review, and human-controlled application for one Node.js Git project. It lets an AI Builder work usefully without silently granting it authority to mutate the user's real project.
 
-> This repository contains the open-source ForgeOS Lite — TrueForge Hackathon Edition. It is a new implementation built during the Agent Harness Hackathon. It does not contain the proprietary ForgeOS product or its private orchestration, skills, runtimes, governance, deployment, or enterprise features.
+> **Agents can propose. Humans authorize irreversible changes.**
 
-## Phase 4 status
+TrueForge performs the real model-backed Builder work in an isolated sandbox, runs the declared validation commands, and supplies the real `tool.approval_required` event before the reviewed patch can reach the original project. ForgeOS Lite supplies the bounded contracts, Coordinator, Reviewer, candidate identity, and controlled application policy around that harness.
 
-Phases 0 through 3 are merged. Phase 4 adds the first complete mission-orchestration vertical slice for one local Node.js Git project. Strict project and mission intake create the existing contracts, a fixed Coordinator produces a public structured plan, and the existing TrueForge runtime executes a declared `npm-run-build` transformation plus declared build and test validation in a fresh isolated Git clone. A fixed Reviewer evaluates only the candidate, scope, base identity, Builder result, and validation evidence. A successful run creates the existing reviewed `CandidatePatch`, records replayable milestones in the existing journal, cleans the TrueForge session and Builder workspace, proves the original is unchanged, and stops at `awaiting_approval`.
+## Three-minute demo
 
-The installed TrueForge 0.1.4 connector schema supports remote Streamable HTTP MCP servers, not stdio connectors. The Phase 3 server therefore binds only to loopback and requires a control-plane bearer token configured as a TrueForge connector header. Its `apply_candidate_patch` tool declares `readOnlyHint: false` and `destructiveHint: true`, while the TrueForge agent specification names that exact tool in `require_approval_for_tools`. TrueForge pauses with `tool.approval_required`; a human resumes the pending tool call with a `user.tool_approval` input. The ApprovalRecord binds the session, thread, tool-call, and approval-event identifiers and remains unusable until the control plane confirms that TrueForge accepted the exact allow resume. The MCP arguments contain only a sealed server-side context identifier and cannot select a target root, submit raw patch content, or claim an approval actor.
-
-The Phase 4 live proof creates two disposable Node.js Git projects and uses `gpt-5.4-mini` through real TrueForge 0.1.4 sessions. The positive mission performs a controlled source change and declared build and test policies, reaches `awaiting_approval`, and prints human approval as the explicit next action. The negative mission completes the Builder change but fails declared `npm-test` validation, records exactly one validation-failure milestone, exposes no candidate or application context, and leaves the original unchanged. Run it against a configured local TrueForge 0.1.4 server with:
+Prerequisites are Node.js 22, Git, and an OpenAI API key stored as `OPENAI_API_KEY` in the ignored local `.env.local` file or the process environment. Never commit the key.
 
 ```sh
-TRUEFORGE_BASE_URL=http://localhost:8790 \
-TRUEFORGE_WORKSPACE_ROOT=/absolute/trusted/trueforge/workspace/root \
-npm run test:integration:mission
-```
-
-Phase 3 still provides the separately proven human-approval and controlled-application boundary:
-
-```sh
-TRUEFORGE_BASE_URL=http://localhost:8790 \
-TRUEFORGE_HUMAN_ACTOR_ID=your-stable-human-id \
-npm run test:integration:approval
-```
-
-Phase 4 verification includes 156 passing unit and adversarial tests: 126 retained regression tests from Phases 0 through 3 and 30 Phase 4 orchestration tests. Repository formatting and English-language gates pass across 43 owned files, and `npm audit --audit-level=low` reports zero vulnerabilities.
-
-Phase 4 remains intentionally fixed rather than autonomous. It defers UI, the backend/API server, durable journal persistence, process-restart recovery, general autonomous Coordinator, Builder, and Reviewer agents, Python and static projects, multi-project support, automatic Git commits, remote Git mutation, cloud execution, deployment, authentication, teams, billing, marketplace features, and ForgeOS Browser.
-
-## Product boundary
-
-- One local user and one Git project per session.
-- The real project remains read-only during agent execution.
-- Build and test activity occurs in a sandbox copy.
-- A reviewed candidate patch is the only proposed output.
-- Applying a candidate patch requires a human-approved MCP tool call.
-- No arbitrary shell command may originate from `forgeos.project.json`.
-
-## Language policy
-
-All owned repository content must be written exclusively in English. This includes code, identifiers, comments, user interface text, accessibility labels, errors, logs, API responses, schemas, configuration, tests, fixtures, documentation, commit messages, branches, pull requests, Qodo responses, demo materials, screenshots, and sample data. Portuguese translations, examples, comments, and bilingual strings are not permitted.
-
-Run the language policy check with:
-
-```sh
+npm install
 npm test
+npm run demo:check
+npm run demo
 ```
 
-The check scans owned text files and excludes vendored dependencies and generated artifacts. Unavoidable third-party content must remain outside owned project files and must be reported during review.
+At the prompt, type `APPROVE` to send a real `user.tool_approval` allow response through TrueForge. The demo creates a fresh disposable Git fixture under `/tmp/forgeos-lite`, prepares and reviews a candidate in the TrueForge sandbox, proves the fixture remains unchanged, pauses at the real approval event, then applies exactly one reviewed source change. It creates no commit or push and cleans up its local services and temporary data.
 
-## Development status
+Useful commands:
 
-The protected integration branch is `main`. Phase 4 is developed on `feat/mission-orchestration-vertical-slice`, with the pull request title:
+| Command | Purpose |
+| --- | --- |
+| `npm run demo` | Run the primary interactive allow demo |
+| `npm run demo:deny` | Exercise the real denial path |
+| `npm run demo:check` | Check prerequisites without exposing credentials |
+| `npm run demo -- --keep-project` | Preserve the disposable target for inspection |
+| `npm run verify` | Run tests, repository gates, the lightweight secret check, and npm audit |
 
-> End-to-end mission orchestration vertical slice
+## Safety story
 
-No substantive code should be merged without Qodo review evidence.
+```mermaid
+flowchart TD
+    U[User mission] --> C[Coordinator structured plan]
+    C --> B[Builder / TrueForge sandbox]
+    subgraph I[Isolated work]
+      B --> V[Declared build and tests]
+      V --> R[Reviewer]
+      R --> P[CandidatePatch]
+    end
+    P --> G[TrueForge approval-required MCP tool]
+    G --> H[Human]
+    H -->|explicit allow| O[Original project working tree]
+    G -->|deny| N[Original project unchanged]
+```
+
+The original project is read-only while the Coordinator, Builder, and Reviewer work. A content-addressed `CandidatePatch` is the only proposed output. The MCP application tool receives only a sealed context ID and cannot choose a target, submit patch content, or claim human identity. TrueForge pauses the destructive tool call, and the exact approval event is bound to one reviewed candidate before application.
+
+## Authority boundaries
+
+| Actor | Allowed | Never authorized |
+| --- | --- | --- |
+| Coordinator | Admit the project and create the bounded structured plan | Edit or apply |
+| Builder | Work and validate only in the isolated TrueForge workspace | Approve or apply |
+| Reviewer | Evaluate candidate identity, scope, and evidence | Edit or apply |
+| Human | Authorize the exact irreversible application | Delegated to an agent |
+
+Application revalidates the candidate, approval, Reviewer evidence, target root, clean Git state, exact base revision, safe paths, and expected file inventory. An approval is single-use. Successful application preserves Git `HEAD` and leaves an explicit uncommitted working-tree diff.
+
+## TrueForge sponsor technology
+
+TrueForge is operational, not decorative. ForgeOS Lite uses TrueForge 0.1.4 for:
+
+- real local session execution;
+- isolated sandbox work;
+- model-backed Builder command execution with `gpt-5.4-mini`;
+- declared build and test validation;
+- the MCP `tool.approval_required` pause and `user.tool_approval` resume.
+
+The CLI starts a disposable local TrueForge service and configures its temporary provider at runtime. The API key is passed only to that disposable service configuration, is never printed, and the temporary service data is removed at shutdown. The TrueForge installation and repository configuration are not modified.
+
+TrueForge 0.1.4 supports remote Streamable HTTP MCP connectors rather than stdio connectors. The approval server therefore binds only to loopback and requires a random connector-only bearer token. HTTP command dispatch is model-mediated; ForgeOS Lite verifies the merged TrueForge tool event against the exact prevalidated command, working directory, and environment.
+
+## Demo implementation
+
+The terminal package is presentation and control-plane code only. It calls the existing Phase 1–4 public APIs and does not duplicate orchestration, review, candidate generation, application, or approval authority.
+
+The fixture generator creates a tiny Git project from scratch for each run. Its declared build changes one greeting module, and its test accepts the baseline and expected demo sentence. The fixed Coordinator derives the public plan, the real TrueForge Builder runs the declared transformation and validation in a fresh clone, and the fixed Reviewer evaluates only structured evidence. The original is compared before approval and again after denial or application.
+
+See [docs/DEMO-SCRIPT.md](docs/DEMO-SCRIPT.md) for the approximately three-minute narration, [docs/DEMO-EVIDENCE.md](docs/DEMO-EVIDENCE.md) for the exact live proof, and [docs/SUBMISSION-CHECKLIST.md](docs/SUBMISSION-CHECKLIST.md) for release readiness.
+
+## Verification and credential safety
+
+```sh
+npm run verify
+```
+
+The official verification command runs formatting, unit and adversarial tests, the English-only gate, a lightweight obvious-secret check, and `npm audit --audit-level=low`. The secret check detects tracked `.env` files, OpenAI key assignments, private-key headers, and obvious secret-key prefixes. It is deliberately lightweight and is not a comprehensive credential scanner.
+
+`.env.local` is ignored and must remain untracked. The preflight checks only whether `OPENAI_API_KEY` has a usable shape; it never displays the value. Real TrueForge execution is kept out of normal unit tests and remains an explicit demo integration command.
 
 ## Qodo Code Review Evidence
 
-- [Phase 0 governance and repository bootstrap](https://github.com/Eddienews/forgeos-lite-trueforge/pull/1): Qodo findings were resolved before the human-approved squash merge.
-- [Phase 1 mission contracts, state machine, and security boundaries](https://github.com/Eddienews/forgeos-lite-trueforge/pull/2): the initial Qodo review found four valid continuity issues. Follow-up work binds approval to the target project and base revision, rejects cross-mission evidence, preserves candidate identity from review through application, and binds completion evidence to the applied candidate hash. An additional automated review identified that the verdict digest also needed to be recomputed from canonical test evidence; that binding and its regression coverage were added. Qodo's latest review was clean and all review threads were resolved before the human-approved merge.
-- [Phase 2 TrueForge session adapter and isolated execution foundation](https://github.com/Eddienews/forgeos-lite-trueforge/pull/3): the final head passed CI and Qodo review before the human-approved merge.
-- [Phase 3 candidate patch generation and approval-required MCP gate](https://github.com/Eddienews/forgeos-lite-trueforge/pull/4): four Qodo security and correctness findings and two additional automated findings were corrected with regression coverage. The final head had a clean Qodo report, successful CI, and zero unresolved review threads before the human-approved merge.
-- [Phase 4 mission orchestration vertical slice](https://github.com/Eddienews/forgeos-lite-trueforge/pull/5): the initial Qodo review identified six valid correctness, security, and reliability findings. Follow-up work prevents validation-time candidate or workspace mutation, binds exact validation evidence to the mission and Builder workspace, enforces mission authority and Builder transformation proof at the Reviewer boundary, and bounds every fingerprinted filesystem entry. Each correction has Phase 4 regression coverage; the final head remains subject to clean follow-up review before human merge approval.
+- [Phase 1 — mission contracts, state machine, and security boundaries](https://github.com/Eddienews/forgeos-lite-trueforge/pull/2): Qodo identified continuity gaps in project/base approval binding, cross-mission evidence, candidate identity, completion evidence, and canonical Reviewer-evidence hashing. The fixes added approval and evidence binding with regression coverage.
+- [Phase 2 — TrueForge session adapter and isolated execution](https://github.com/Eddienews/forgeos-lite-trueforge/pull/3): Qodo reviewed the runtime boundary and its confinement, timeout/cancellation, command-substitution, and cleanup protections. The final reviewed head passed CI before human merge.
+- [Phase 3 — candidate patch and approval-required MCP gate](https://github.com/Eddienews/forgeos-lite-trueforge/pull/4): Qodo findings drove stronger approval binding, workspace and target confinement, rollback safety, evidence binding, authority enforcement, and single-use behavior, each backed by regression tests.
+- [Phase 4 — mission orchestration vertical slice](https://github.com/Eddienews/forgeos-lite-trueforge/pull/5): Qodo found validation-time mutation, evidence-workspace binding, Reviewer authority, transformation-proof, and traversal-bound issues. Corrections confine validation to the Builder workspace and bind exact evidence and scope to the reviewed candidate.
+- [Phase 5 — demo workflow and submission readiness](https://github.com/Eddienews/forgeos-lite-trueforge/pull/6): the initial Qodo review found four valid security, correctness, and reliability issues. Follow-up work makes the shared temporary parent current-user-owned and private, accepts staged file deletions in the secret gate, verifies the completed TrueForge denial outcome, and attempts every cleanup step while preserving the primary error. A separate review added bounded control-plane polling and provider-request deadlines. Each correction has focused regression coverage. Qodo's follow-up on implementation head `6b77a08` reported zero bugs and zero rule violations, CI passed, and all review threads were resolved.
+
+Phase 0 governance is recorded separately in [PR #1](https://github.com/Eddienews/forgeos-lite-trueforge/pull/1). No substantive pull request is merged without CI, Qodo final-head review, resolved review threads, and explicit human approval.
+
+## Scope and limitations
+
+ForgeOS Lite currently supports one clean local Node.js Git repository and one fixed in-memory mission at a time. The demo intentionally uses a declared project build transformation rather than a general model-authored edit language. Mission journals and approval registries are in memory and are not restart-safe. Multi-file application uses complete preflight checks and best-effort rollback rather than a portable atomic filesystem transaction.
+
+This phase does not add a web UI, backend, database, durable recovery, Python or static projects, general autonomous agents, multiple projects, teams, cloud execution, automatic commits, pushes, pull-request creation for target projects, deployment, billing, or marketplace features.
+
+## Repository policy
+
+All owned repository content must be exclusively in English, including code, identifiers, comments, interface text, logs, tests, fixtures, documentation, commit messages, branches, pull requests, Qodo responses, and demo materials. Generated dependencies and binary artifacts are excluded from the owned-text gate.
+
+This public repository is a new hackathon implementation. It does not contain the separate proprietary ForgeOS product or its private implementation, skills, runtimes, governance, deployment, or enterprise features.
 
 ## License and marks
 
-Source code is licensed under the MIT License. See [TRADEMARKS.md](TRADEMARKS.md) for restrictions concerning the ForgeOS name and identity, and [NOTICE.md](NOTICE.md) for project provenance.
+Source code is licensed under the [MIT License](LICENSE). See [TRADEMARKS.md](TRADEMARKS.md) for restrictions concerning the ForgeOS name and identity, and [NOTICE.md](NOTICE.md) for project provenance.

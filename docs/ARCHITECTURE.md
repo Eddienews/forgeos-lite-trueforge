@@ -2,14 +2,11 @@
 
 ## System context
 
-TrueForge is the central agent harness. ForgeOS Lite supplies domain contracts, project tools, mission coordination, review policy, and a Mission Control interface. It does not replace TrueForge model access, sessions, sandboxing, tool orchestration, or persistence.
+TrueForge is the central agent harness. ForgeOS Lite supplies domain contracts, mission coordination, review policy, candidate application, and a terminal demo surface. It does not replace TrueForge model access, sessions, sandboxing, or tool orchestration.
 
 ## Workspace
 
 ```text
-apps/
-  web/                    Mission Control interface
-  server/                 Local API and event stream
 packages/
   contracts/              Public schemas and event contracts
   core/                   Mission state and handoff rules
@@ -17,12 +14,13 @@ packages/
   candidate-patch/        Deterministic reviewed text changes
   mcp-server/             Approval-gated candidate application
   orchestrator/           Fixed Phase 4 mission vertical slice
-examples/
-  sample-project/         Reproducible demonstration project
+  cli/                    Phase 5 presentation and control plane
+scripts/
+  create-demo-project.mjs Fresh disposable Git fixture generator
 docs/                     Architecture, security, and event material
 ```
 
-Phase 1 implements `packages/contracts` and `packages/core`. Phase 2 implements `packages/runtime-trueforge`. Phase 3 implements `packages/candidate-patch` and `packages/mcp-server`. Phase 4 implements `packages/orchestrator`. The application server, interface, examples, durable persistence, and general autonomous orchestration remain deferred.
+Phase 1 implements `packages/contracts` and `packages/core`. Phase 2 implements `packages/runtime-trueforge`. Phase 3 implements `packages/candidate-patch` and `packages/mcp-server`. Phase 4 implements `packages/orchestrator`. Phase 5 adds `packages/cli` and a generated disposable fixture without changing the authority architecture. A web interface, application server, durable persistence, and general autonomous orchestration remain deferred.
 
 ## Phase 1 public APIs
 

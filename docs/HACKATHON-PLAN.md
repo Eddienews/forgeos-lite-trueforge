@@ -73,14 +73,16 @@ Branch: `feat/mission-orchestration-vertical-slice`
 
 Phase 4 stops at the Phase 3 human gate. It does not add an interface, backend, database, durable recovery, general autonomous agents, new runtimes, commits, pushes, or deployment.
 
-### PR 5: Mission Control, example, and submission evidence
+### PR 5: Demo workflow and submission readiness
 
-Branch: `feat/mission-control-demo`
+Branch: `feat/demo-submission-readiness`
 
-- Timeline interface and reconnection behavior.
-- Reproducible sample project.
-- End-to-end tests, security evidence, setup documentation, screenshots, and demo script.
-- Final Qodo evidence and approximately three-minute demonstration.
+- Presentation-only terminal interface over existing public APIs.
+- Generated disposable Git fixture and reproducible allow and deny demonstrations.
+- Preflight, lightweight secret check, consolidated verification, and cleanup.
+- README, final Qodo evidence, submission checklist, and approximately three-minute script.
+
+Phase 5 does not add a web interface, persistence, a backend, or another product subsystem.
 
 ## Milestones and budget
 
@@ -90,8 +92,8 @@ Branch: `feat/mission-control-demo`
 | Contracts and state | 6 hours | PR 1 reviewed and tests pass |
 | TrueForge and sandbox tools | 10 hours | PR 2 reviewed; real sandbox execution visible |
 | Patch approval boundary | 8 hours | PR 3 reviewed; deny and allow behavior proven |
-| Interface and persistence | 6 hours | Timeline survives refresh and reconnect |
-| Submission evidence | 6 hours | Reproducible setup, Qodo trail, video, and write-up |
+| Demo presentation | 6 hours | Existing safety workflow is clear in one terminal command |
+| Submission evidence | 6 hours | Reproducible setup, Qodo trail, script, and write-up |
 | Contingency | 4 hours | Reserved for TrueForge version or macOS constraints |
 
 ## Decision gates
@@ -110,7 +112,7 @@ Proceed only if denial causes no real-project write, approval applies exactly on
 
 ### Gate D: Submission
 
-Proceed only if refresh and reconnection preserve state, the demo completes in three minutes, all tests pass, and representative Qodo-reviewed pull requests are public.
+Proceed only if the terminal demo completes in approximately three minutes, all tests pass, and representative Qodo-reviewed pull requests are public.
 
 ## Qodo workflow
 
