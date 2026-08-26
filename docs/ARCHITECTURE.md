@@ -4,7 +4,7 @@
 
 TrueForge is the central agent harness. ForgeOS Lite supplies domain contracts, project tools, mission coordination, review policy, and a Mission Control interface. It does not replace TrueForge model access, sessions, sandboxing, tool orchestration, or persistence.
 
-## Planned workspace
+## Workspace
 
 ```text
 apps/
@@ -20,7 +20,28 @@ examples/
 docs/                     Architecture, security, and event material
 ```
 
-Only Phase 0 documents and quality configuration exist initially. The planned workspace directories will be created by reviewed substantive pull requests.
+Phase 1 implements `packages/contracts` and `packages/core`. The remaining workspace directories are deferred to later reviewed pull requests.
+
+## Phase 1 public APIs
+
+`packages/contracts` exposes fail-closed validation and security primitives:
+
+- `validateProjectManifest`, `validateMission`, `validateAgentProfile`, `validateHandoff`, `validateCandidatePatch`, and `validateApprovalRecord` reject unknown fields and invalid values.
+- `getAgentProfile` returns one fixed least-privilege profile.
+- `approvalMatchesCandidate` and `assertUniqueApprovalId` bind explicit human decisions to one reviewed candidate.
+- `assertSafeRelativePath`, `assertCommandToken`, `assertAuthoritySubset`, and `assertNoForbiddenFields` enforce reusable boundaries.
+- `canonicalJson`, `sha256`, and `hashesEqual` provide deterministic hashing and constant-time comparison for valid SHA-256 values.
+
+`packages/core` exposes the deterministic mission lifecycle:
+
+- `MISSION_TRANSITIONS` is the explicit transition table.
+- `validateMissionTransition` enforces transition and evidence guards.
+- `createMissionEvent` and `validateMissionEvent` define the append-only event contract.
+- `verifyMissionJournal` verifies sequence continuity, hash chaining, and an optional trusted anchor.
+- `replayMissionJournal` derives current state and reports mutable-cache divergence.
+- `InMemoryMissionJournal` provides idempotent in-memory append and replay behavior for Phase 1 tests.
+
+These APIs do not execute commands, access the filesystem, connect to TrueForge, or apply patches.
 
 ## Agent profiles
 
@@ -53,7 +74,7 @@ Conceptual input:
 }
 ```
 
-The values above are policy identifiers, not commands. The runtime policy owns the exact executable and arguments.
+The values above are policy identifiers, not commands. Phase 1 represents lifecycle commands as either a known policy with structured argument tokens or an explicit `not_applicable` value. Runtime policy execution is deferred to Phase 2.
 
 ## MCP tool boundary
 
@@ -80,7 +101,8 @@ The only real-project write tool is `apply_candidate_patch`. Its MCP annotations
 
 TrueForge owns agent session persistence. ForgeOS Lite stores public mission contracts and emits timeline events through the server. The adapter maps TrueForge session, agent, tool, sandbox, and approval events into stable public contracts without exposing credentials or private chain-of-thought.
 
+Phase 1 implements only in-memory journal construction, verification, and replay. Filesystem persistence, the server, the TrueForge adapter, and reconnection behavior remain deferred. A trusted journal anchor is required to detect removal of the final event because a hash chain alone cannot prove that its tail is complete.
+
 ## Language boundary
 
 All owned source and generated project artifacts use English. A dependency-free repository check scans supported text formats, while CI and review prevent unchecked content from merging. Vendored dependencies and generated outputs are excluded and remain outside owned-language claims.
-

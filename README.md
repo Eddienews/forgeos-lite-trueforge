@@ -4,9 +4,9 @@ ForgeOS Lite is an open-source, local-first harness for controlled changes to on
 
 > This repository contains the open-source ForgeOS Lite — TrueForge Hackathon Edition. It is a new implementation built during the Agent Harness Hackathon. It does not contain the proprietary ForgeOS product or its private orchestration, skills, runtimes, governance, deployment, or enterprise features.
 
-## Phase 0 status
+## Phase 1 status
 
-This repository currently contains governance, architecture, security, and delivery planning only. Coordinator, Builder, Reviewer, TrueForge integration, and MCP tools have not been implemented.
+Phase 0 governance is merged. The Phase 1 branch implements dependency-free mission contracts, fixed agent profiles, guarded state transitions, security utilities, and an in-memory hash-chained event journal. TrueForge sessions, MCP tools, sandbox execution, patch application, durable persistence, the server, and the interface remain deferred to later reviewed pull requests.
 
 ## Product boundary
 
@@ -31,7 +31,7 @@ The check scans owned text files and excludes vendored dependencies and generate
 
 ## Development status
 
-The protected integration branch is `main`. The first proposed substantive branch is `feat/mission-contract-foundation`, with the pull request title:
+The protected integration branch is `main`. Phase 1 is developed on `feat/mission-contract-foundation`, with the pull request title:
 
 > Mission contracts, state machine, and security boundaries
 
@@ -39,9 +39,9 @@ No substantive code should be merged without Qodo review evidence.
 
 ## Qodo Code Review Evidence
 
-No substantive pull request exists in Phase 0. This section will link representative merged pull requests, record Qodo findings and decisions, and document follow-up review before the first substantive merge.
+- [Phase 0 governance and repository bootstrap](https://github.com/Eddienews/forgeos-lite-trueforge/pull/1): Qodo findings were resolved before the human-approved squash merge.
+- [Phase 1 mission contracts, state machine, and security boundaries](https://github.com/Eddienews/forgeos-lite-trueforge/pull/2): the initial Qodo review found four valid continuity issues. Follow-up work binds approval to the target project and base revision, rejects cross-mission evidence, preserves candidate identity from review through application, and binds completion evidence to the applied candidate hash. An additional automated review identified that the verdict digest also needed to be recomputed from canonical test evidence; that binding and its regression coverage were added. Follow-up review is required before merge.
 
 ## License and marks
 
 Source code is licensed under the MIT License. See [TRADEMARKS.md](TRADEMARKS.md) for restrictions concerning the ForgeOS name and identity, and [NOTICE.md](NOTICE.md) for project provenance.
-

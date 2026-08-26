@@ -2,6 +2,9 @@
   "name": "forgeos-lite-trueforge",
   "version": "0.0.0",
   "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "description": "A controlled local project harness built around TrueForge for the Agent Harness Hackathon.",
   "license": "MIT",
   "type": "module",
@@ -15,4 +18,3 @@
     "node": ">=22 <23"
   }
 }
-

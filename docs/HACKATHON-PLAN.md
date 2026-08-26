@@ -28,6 +28,13 @@ Branch: `feat/mission-contract-foundation`
 - Runtime policy identifiers instead of arbitrary commands.
 - Contract and security-boundary tests.
 
+Phase 1 implementation status on this branch:
+
+- Dependency-free ESM packages provide exact-key runtime validators and documented public APIs.
+- Fixed profiles and authority subset checks enforce least privilege.
+- An in-memory event journal provides canonical SHA-256 chaining, idempotent replay, trusted anchors, and cache-divergence reporting.
+- TrueForge integration, MCP tools, filesystem operations, command execution, durable persistence, server, and UI remain deferred.
+
 ### PR 2: TrueForge profiles and sandbox project tools
 
 Branch: `feat/trueforge-sandbox-tools`

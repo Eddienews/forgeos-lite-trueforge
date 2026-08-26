@@ -1,0 +1,6 @@
+{
+  "name": "@forgeos-lite/contracts",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.js"
+}
