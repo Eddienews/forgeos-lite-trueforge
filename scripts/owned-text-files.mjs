@@ -47,14 +47,18 @@ const binaryExtensions = new Set([
 const utf8Decoder = new TextDecoder("utf-8", { fatal: true });
 
 export function decodeOwnedText(filePath, buffer) {
-  if (binaryExtensions.has(path.extname(filePath).toLowerCase()) || buffer.includes(0)) {
+  if (binaryExtensions.has(path.extname(filePath).toLowerCase())) {
     return null;
+  }
+
+  if (buffer.includes(0)) {
+    throw new Error(`Owned text file contains a null byte: ${filePath}`);
   }
 
   try {
     return utf8Decoder.decode(buffer);
-  } catch {
-    return null;
+  } catch (error) {
+    throw new Error(`Owned text file is not valid UTF-8: ${filePath}`, { cause: error });
   }
 }
 
@@ -90,4 +94,3 @@ export async function collectOwnedTextFiles(root) {
   await walk(root);
   return files;
 }
-

@@ -7,12 +7,17 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 export function findFormattingViolations(content, relativePath) {
   const violations = [];
+  const extension = path.extname(relativePath).toLowerCase();
+  const allowsTrailingWhitespace = extension === ".md" || extension === ".mdx";
 
   if (!content.endsWith("\n")) {
     violations.push(`${relativePath}: missing final newline`);
   }
+  if (content.includes("\r")) {
+    violations.push(`${relativePath}: non-LF line ending`);
+  }
   content.split("\n").forEach((line, index) => {
-    if (/[ \t]+$/u.test(line)) {
+    if (!allowsTrailingWhitespace && /[ \t]+\r?$/u.test(line)) {
       violations.push(`${relativePath}:${index + 1}: trailing whitespace`);
     }
   });

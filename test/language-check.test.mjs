@@ -26,6 +26,13 @@ test("rejects unintended accented Latin text", () => {
   assert.notDeepEqual(findLanguageViolations(accentedSample), []);
 });
 
+test("rejects canonically decomposed accented Latin text", () => {
+  const accentedSample = Buffer.from("Y29uZmlndXJhw6fDo28=", "base64")
+    .toString("utf8")
+    .normalize("NFD");
+  assert.notDeepEqual(findLanguageViolations(accentedSample), []);
+});
+
 test("accepts language-neutral mathematical symbols", () => {
   assert.deepEqual(findLanguageViolations("5 × 3 = 15; 12 ÷ 4 = 3."), []);
 });
@@ -43,4 +50,18 @@ test("treats CSV, SVG, and extensionless configuration as owned text", () => {
 
 test("excludes known binary artifacts", () => {
   assert.equal(decodeOwnedText("screenshots/demo.png", Buffer.from([1, 2, 3])), null);
+});
+
+test("rejects null bytes in an owned text format", () => {
+  assert.throws(
+    () => decodeOwnedText("docs/guide.md", Buffer.from([65, 0, 66])),
+    /contains a null byte/u
+  );
+});
+
+test("rejects invalid UTF-8 in an owned text format", () => {
+  assert.throws(
+    () => decodeOwnedText("src/example.ts", Buffer.from([0xc3, 0x28])),
+    /not valid UTF-8/u
+  );
 });

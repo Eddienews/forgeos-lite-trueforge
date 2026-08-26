@@ -96,13 +96,14 @@ function containsTerm(text, term) {
 
 export function findLanguageViolations(text) {
   const violations = [];
+  const normalizedText = text.normalize("NFC");
 
-  if (containsNonAsciiLatinLetter(text)) {
+  if (containsNonAsciiLatinLetter(normalizedText)) {
     violations.push("Latin accented text");
   }
 
   for (const term of blockedTerms) {
-    if (containsTerm(text, term.value)) {
+    if (containsTerm(normalizedText, term.value)) {
       violations.push(`Blocked non-English term (${term.id})`);
     }
   }
