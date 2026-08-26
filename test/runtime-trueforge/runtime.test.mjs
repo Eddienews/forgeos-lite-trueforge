@@ -5,6 +5,7 @@ import path from "node:path";
 import test, { afterEach } from "node:test";
 
 import {
+  createTrueForgeHttpDriver,
   createTrueForgeSession,
   runtimeCommandFingerprint,
   validateRuntimeEvidence
@@ -103,6 +104,8 @@ test("runs one declared policy through the replaceable TrueForge boundary", asyn
   assert.equal(evidence.exitStatus, 0);
   assert.deepEqual(evidence.command, { kind: "policy", policyId: "npm-test", arguments: [] });
   assert.deepEqual(calls[1].input.argv, ["npm", "test"]);
+  assert.equal(calls[1].input.workingDirectory, path.join(session.workspaceRoot, "fixture"));
+  assert.equal(evidence.workingDirectory, "fixture");
   assert.equal(Object.hasOwn(evidence, "environment"), false);
   assert.equal(validateRuntimeEvidence(evidence), evidence);
 
@@ -150,7 +153,7 @@ test("rejects a driver workspace outside the trusted root", async () => {
   const trusted = await workspace();
   const outside = await mkdtemp(path.join(os.tmpdir(), "forgeos-lite-outside-"));
   temporaryRoots.push(outside);
-  const { driver } = successfulDriver(await real(outside));
+  const { calls, driver } = successfulDriver(await real(outside));
   await assert.rejects(
     createTrueForgeSession({
       driver,
@@ -159,6 +162,27 @@ test("rejects a driver workspace outside the trusted root", async () => {
       workspaceRoot: trusted.root
     }),
     /escapes/u
+  );
+  assert.equal(calls.filter((entry) => entry.method === "closeSession").length, 1);
+});
+
+test("reports cleanup failure after rejecting invalid startup metadata", async () => {
+  const trusted = await workspace();
+  const outside = await mkdtemp(path.join(os.tmpdir(), "forgeos-lite-outside-"));
+  temporaryRoots.push(outside);
+  const { driver } = successfulDriver(await real(outside), {
+    async closeSession() {
+      throw new Error("cleanup transport unavailable");
+    }
+  });
+  await assert.rejects(
+    createTrueForgeSession({
+      driver,
+      manifest: validManifest(),
+      missionId: "mission-one",
+      workspaceRoot: trusted.root
+    }),
+    /startup validation failed:.*escapes.*Cleanup failed: cleanup transport unavailable/u
   );
 });
 
@@ -255,6 +279,87 @@ test("normalizes timeout evidence separately from runtime failure", async () => 
   assert.equal(evidence.timedOut, true);
   assert.equal(evidence.runtimeError, null);
   assert.equal(session.state, "ready");
+});
+
+test("passes the execution deadline signal to merged-history retrieval", async () => {
+  const requests = [];
+  const driver = createTrueForgeHttpDriver({
+    agentSpec: { model: "qualified-test-model" },
+    baseUrl: "http://localhost:8792",
+    async fetchImpl(url, init) {
+      requests.push({ url, init });
+      if (url.endsWith("/turns")) {
+        return {
+          ok: true,
+          async text() {
+            return 'data: {"event":{"type":"turn.completed"}}\n';
+          }
+        };
+      }
+      assert.match(url, /\/events\?limit=100$/u);
+      assert.ok(init.signal instanceof AbortSignal);
+      throw new Error("history transport stopped");
+    }
+  });
+  const result = await driver.execute({
+    argv: ["npm", "test"],
+    environment: {},
+    sessionId: "trueforge-session-one",
+    timeoutMs: 10_000,
+    workingDirectory: "/tmp/confined/fixture"
+  });
+  assert.equal(requests.length, 2);
+  assert.equal(result.runtimeError, "history transport stopped");
+});
+
+test("marks a timeout as failed when TrueForge cancellation fails", async () => {
+  const driver = createTrueForgeHttpDriver({
+    agentSpec: { model: "qualified-test-model" },
+    baseUrl: "http://localhost:8792",
+    async fetchImpl(url) {
+      if (url.endsWith("/turns")) {
+        throw new DOMException("execution deadline elapsed", "AbortError");
+      }
+      assert.match(url, /\/cancel$/u);
+      throw new Error("cancel transport unavailable");
+    }
+  });
+  const result = await driver.execute({
+    argv: ["npm", "test"],
+    environment: {},
+    sessionId: "trueforge-session-one",
+    timeoutMs: 10_000,
+    workingDirectory: "/tmp/confined/fixture"
+  });
+  assert.equal(result.timedOut, true);
+  assert.equal(
+    result.runtimeError,
+    "TrueForge timeout cancellation failed: cancel transport unavailable"
+  );
+});
+
+test("keeps a session failed when timeout cancellation is unconfirmed", async () => {
+  const { session } = await readySession({
+    driverOverrides: {
+      async execute() {
+        return {
+          exitStatus: null,
+          stdout: "",
+          stderr: "",
+          timedOut: true,
+          runtimeError: "TrueForge timeout cancellation failed: unavailable"
+        };
+      }
+    }
+  });
+  const evidence = await session.execute(execution());
+  assert.equal(evidence.timedOut, true);
+  assert.match(evidence.runtimeError, /cancellation failed/u);
+  assert.equal(session.state, "failed");
+  await assert.rejects(
+    session.execute(execution({ executionId: "execution-two" })),
+    /state is failed/u
+  );
 });
 
 test("removes forbidden private reasoning from the evidence boundary", async () => {
@@ -358,15 +463,22 @@ test("rejects execution while shutdown is active", async () => {
 });
 
 test("surfaces shutdown failure and retains failed state", async () => {
+  let attempts = 0;
   const { session } = await readySession({
     driverOverrides: {
       async closeSession() {
-        throw new Error("release failed");
+        attempts += 1;
+        if (attempts === 1) {
+          throw new Error("release failed");
+        }
       }
     }
   });
   await assert.rejects(session.close(), /shutdown failed: release failed/u);
   assert.equal(session.state, "failed");
+  await session.close();
+  assert.equal(attempts, 2);
+  assert.equal(session.state, "closed");
 });
 
 test("rejects execution evidence containing a private conversation field", () => {

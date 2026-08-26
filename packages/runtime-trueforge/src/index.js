@@ -338,8 +338,12 @@ export class TrueForgeRuntimeSession {
     const validated = validateExecutionRequest(request, this.#missionId, this.#manifest);
     this.#state = "executing";
     let startedAt;
+    let workingDirectory;
     try {
-      await resolveWorkingDirectory(this.#workspaceRoot, request.workingDirectory);
+      workingDirectory = await resolveWorkingDirectory(
+        this.#workspaceRoot,
+        request.workingDirectory
+      );
       startedAt = this.#clock();
       assertIsoTimestamp(startedAt, "RuntimeEvidence.startedAt");
     } catch (error) {
@@ -355,7 +359,7 @@ export class TrueForgeRuntimeSession {
           missionId: this.#missionId,
           sessionId: this.#sessionId,
           timeoutMs: request.timeoutMs,
-          workingDirectory: request.workingDirectory,
+          workingDirectory,
           workspaceRoot: this.#workspaceRoot
         })
       );
@@ -405,7 +409,7 @@ export class TrueForgeRuntimeSession {
       fail("TrueForge session cannot close while execution is active.");
     }
     this.#state = "closing";
-    this.#closePromise = (async () => {
+    const closePromise = (async () => {
       try {
         await this.#driver.closeSession({
           missionId: this.#missionId,
@@ -418,7 +422,15 @@ export class TrueForgeRuntimeSession {
         throw new Error(`TrueForge session shutdown failed: ${errorMessage(error)}`, { cause: error });
       }
     })();
-    return await this.#closePromise;
+    this.#closePromise = closePromise;
+    try {
+      return await closePromise;
+    } catch (error) {
+      if (this.#closePromise === closePromise) {
+        this.#closePromise = undefined;
+      }
+      throw error;
+    }
   }
 }
 
@@ -450,9 +462,34 @@ export async function createTrueForgeSession(options) {
   } catch (error) {
     throw new Error(`TrueForge session startup failed: ${errorMessage(error)}`, { cause: error });
   }
-  assertExactKeys(created, ["sessionId", "workspaceRoot"], [], "TrueForge created session");
-  assertIdentifier(created.sessionId, "TrueForge created session.sessionId");
-  const workspaceRoot = await validateBoundWorkspace(configuredRoot, created.workspaceRoot);
+  let workspaceRoot;
+  try {
+    assertExactKeys(created, ["sessionId", "workspaceRoot"], [], "TrueForge created session");
+    assertIdentifier(created.sessionId, "TrueForge created session.sessionId");
+    workspaceRoot = await validateBoundWorkspace(configuredRoot, created.workspaceRoot);
+  } catch (error) {
+    if (
+      created !== null &&
+      typeof created === "object" &&
+      !Array.isArray(created) &&
+      typeof created.sessionId === "string" &&
+      identifierPattern.test(created.sessionId)
+    ) {
+      try {
+        await options.driver.closeSession({
+          missionId: options.missionId,
+          sessionId: created.sessionId,
+          workspaceRoot: configuredRoot
+        });
+      } catch (cleanupError) {
+        throw new Error(
+          `TrueForge session startup validation failed: ${errorMessage(error)} Cleanup failed: ${errorMessage(cleanupError)}`,
+          { cause: error }
+        );
+      }
+    }
+    throw error;
+  }
   return new TrueForgeRuntimeSession({
     clock,
     driver: options.driver,

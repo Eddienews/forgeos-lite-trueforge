@@ -49,7 +49,8 @@ These Phase 1 APIs do not execute commands, access the filesystem, connect to Tr
 
 - `createTrueForgeSession` validates the trusted workspace root and Phase 1 project manifest, creates one driver-backed session, and binds the returned workspace below the configured root.
 - `TrueForgeRuntimeSession` exposes execution-only state: `ready`, `executing`, `closing`, `failed`, and `closed`. It does not replace or reinterpret mission state.
-- `createTrueForgeHttpDriver` uses the loopback TrueForge HTTP API, creates an inline-agent session, discovers its local sandbox through a harmless `pwd` probe, executes one validated command, reads merged TrueForge events, and deletes the session during shutdown.
+- `createTrueForgeHttpDriver` uses the loopback TrueForge HTTP API, creates an inline-agent session, discovers its local sandbox through a harmless `pwd` probe, executes one validated command, reads merged TrueForge events within the same deadline, and deletes the session during shutdown.
+- The runtime resolves a requested relative working directory to its canonical confined host path before handing it to the driver. Public evidence retains the validated relative path and does not expose the host path.
 - `validateRuntimeEvidence` accepts only execution identifiers, mission binding, timestamps, exit status, the structured command, a relative working directory, stdout, stderr, timeout state, and a bounded runtime error.
 - `runtimeCommandFingerprint` canonicalizes only the public structured command representation.
 
@@ -121,6 +122,7 @@ Phase 1 implements only in-memory journal construction, verification, and replay
 - TrueForge owns the isolated sandbox path below a trusted application-supplied root; ForgeOS Lite does not mount or mutate a user's external project.
 - TrueForge 0.1.4 returns combined command output in its sandbox tool response. The adapter exposes that response as stdout and keeps stderr empty when the upstream response has no separate stderr channel.
 - Command dispatch through the HTTP driver is model-mediated. The driver compares the merged TrueForge tool call with the exact derived command, working directory, and environment and reports any substitution as a runtime failure. The local sandbox remains the confinement boundary.
+- Startup validation failures trigger a bounded session cleanup attempt. Failed timeout cancellation leaves the session failed, and a transient shutdown failure can be retried without admitting more execution.
 - Durable evidence, restart recovery, approval-required patch application, and non-Node policy execution remain deferred.
 
 ## Language boundary

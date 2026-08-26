@@ -58,8 +58,9 @@ Internal reversible writes within the approved sandbox copy do not require repea
 - Working directories remain normalized Phase 1 relative paths. Every existing component is checked, symlinks are rejected, and the canonical result must remain inside the bound workspace.
 - Execution environment keys must be declared by the project manifest; malformed, undeclared, and secret-bearing keys fail closed. Environment values are not included in public evidence.
 - Runtime evidence uses an exact public shape and recursively rejects private reasoning, conversation history, secrets, and unknown fields.
-- Driver startup, execution, timeout, shutdown, and execution-after-close behavior have separate tests.
+- Driver startup cleanup, execution, deadline propagation, failed timeout cancellation, retryable shutdown, and execution-after-close behavior have separate tests.
 - The TrueForge HTTP driver accepts only a loopback endpoint and checks the merged sandbox tool call against the exact derived command, working directory, and environment.
+- The runtime passes the canonical confined working-directory path to the driver while retaining only its relative form in public evidence.
 - A live TrueForge 0.1.4 proof runs `npm test` in a disposable local sandbox, creates one fixture result file, captures exit and output evidence, verifies containment, and closes the session.
 
 ## Deferred security controls

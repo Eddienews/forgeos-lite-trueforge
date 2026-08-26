@@ -196,7 +196,8 @@ export function createTrueForgeHttpDriver(options) {
       });
       parseEventStream(await response.text());
       const historyResponse = await request(
-        `/api/v1/sessions/${encodeURIComponent(sessionId)}/events?limit=100`
+        `/api/v1/sessions/${encodeURIComponent(sessionId)}/events?limit=100`,
+        { signal: controller.signal }
       );
       const history = await historyResponse.json();
       if (!Array.isArray(history?.data) || history.data.length === 0) {
@@ -264,16 +265,21 @@ export function createTrueForgeHttpDriver(options) {
         return await runTurn(sessionId, expected, timeoutMs);
       } catch (error) {
         if (error?.name === "AbortError") {
-          await request(`/api/v1/sessions/${encodeURIComponent(sessionId)}/cancel`, {
-            method: "POST",
-            body: "{}"
-          }).catch(() => undefined);
+          let cancellationError = null;
+          try {
+            await request(`/api/v1/sessions/${encodeURIComponent(sessionId)}/cancel`, {
+              method: "POST",
+              body: "{}"
+            });
+          } catch (cancelError) {
+            cancellationError = `TrueForge timeout cancellation failed: ${safeError(cancelError)}`;
+          }
           return {
             exitStatus: null,
             stdout: "",
             stderr: "",
             timedOut: true,
-            runtimeError: null
+            runtimeError: cancellationError
           };
         }
         return {
