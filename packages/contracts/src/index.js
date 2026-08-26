@@ -475,6 +475,7 @@ export function validateApprovalRecord(value) {
       "reviewerEvidenceSha256",
       "actor",
       "actorId",
+      "approvalContext",
       "decision",
       "createdAt"
     ],
@@ -495,11 +496,31 @@ export function validateApprovalRecord(value) {
     fail("ApprovalRecord.actor must be the human actor.");
   }
   assertIdentifier(value.actorId, "ApprovalRecord.actorId");
+  validateApprovalContext(value.approvalContext);
   if (!new Set(["approved", "rejected"]).has(value.decision)) {
     fail("ApprovalRecord.decision is invalid.");
   }
   assertIsoTimestamp(value.createdAt, "ApprovalRecord.createdAt");
   assertNoForbiddenFields(value, "ApprovalRecord");
+  return value;
+}
+
+/** Validate the exact TrueForge approval event that authorized one record. */
+export function validateApprovalContext(value) {
+  assertExactKeys(
+    value,
+    ["mechanism", "sessionId", "threadId", "toolCallId", "approvalEventId"],
+    [],
+    "ApprovalContext"
+  );
+  if (value.mechanism !== "trueforge.tool_approval") {
+    fail("ApprovalContext.mechanism must be trueforge.tool_approval.");
+  }
+  assertIdentifier(value.sessionId, "ApprovalContext.sessionId");
+  assertIdentifier(value.threadId, "ApprovalContext.threadId");
+  assertIdentifier(value.toolCallId, "ApprovalContext.toolCallId");
+  assertIdentifier(value.approvalEventId, "ApprovalContext.approvalEventId");
+  assertNoForbiddenFields(value, "ApprovalContext");
   return value;
 }
 

@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { constants as fsConstants } from "node:fs";
 import {
   access,
+  chmod,
   lstat,
   open,
   readFile,
@@ -514,6 +515,7 @@ async function rollback(applied) {
         await unlink(entry.target);
       } else {
         await writeFile(entry.target, entry.original, { mode: entry.mode });
+        await chmod(entry.target, entry.mode);
       }
     } catch (error) {
       errors.push(error instanceof Error ? error.message : "unknown rollback error");
@@ -522,7 +524,7 @@ async function rollback(applied) {
   return errors;
 }
 
-async function writeCandidateFile(entry) {
+async function writeCandidateFile(entry, onMutationStarted, afterFileOpen) {
   const flags =
     entry.operation.operation === "add"
       ? fsConstants.O_WRONLY |
@@ -532,6 +534,10 @@ async function writeCandidateFile(entry) {
       : fsConstants.O_WRONLY | fsConstants.O_TRUNC | fsConstants.O_NOFOLLOW;
   const handle = await open(entry.target, flags, entry.mode);
   try {
+    onMutationStarted();
+    if (afterFileOpen !== undefined) {
+      await afterFileOpen(entry.operation.path);
+    }
     await handle.writeFile(entry.operation.content, { encoding: "utf8" });
   } finally {
     await handle.close();
@@ -561,7 +567,7 @@ export async function applyCandidateArtifact(options) {
   assertExactKeys(
     options,
     ["candidate", "artifact", "projectRoot"],
-    ["clock", "beforeFinalValidation"],
+    ["clock", "beforeFinalValidation", "afterFileOpen"],
     "CandidateApplicationOptions"
   );
   const clock = options.clock ?? (() => new Date().toISOString());
@@ -574,6 +580,9 @@ export async function applyCandidateArtifact(options) {
   ) {
     fail("CandidateApplicationOptions.beforeFinalValidation must be a trusted function.");
   }
+  if (options.afterFileOpen !== undefined && typeof options.afterFileOpen !== "function") {
+    fail("CandidateApplicationOptions.afterFileOpen must be a trusted function.");
+  }
   await preflightApplication(options);
   if (options.beforeFinalValidation !== undefined) {
     await options.beforeFinalValidation();
@@ -584,10 +593,14 @@ export async function applyCandidateArtifact(options) {
     for (const entry of plan) {
       if (entry.operation.operation === "delete") {
         await unlink(entry.target);
+        applied.push(entry);
       } else {
-        await writeCandidateFile(entry);
+        await writeCandidateFile(
+          entry,
+          () => applied.push(entry),
+          options.afterFileOpen
+        );
       }
-      applied.push(entry);
     }
     await verifyAppliedPlan(plan);
     const head = (await gitText(root, ["rev-parse", "HEAD"])).trim();

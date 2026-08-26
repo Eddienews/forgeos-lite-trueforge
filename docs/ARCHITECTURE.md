@@ -69,9 +69,9 @@ The public execution request names one known lifecycle action. The adapter selec
 
 `packages/mcp-server` provides the irreversible boundary:
 
-- `CandidateApplicationRegistry` seals candidate, artifact, target root, reviewer identity, and human approval outside model-controlled tool arguments.
+- `CandidateApplicationRegistry` seals candidate, artifact, target root, reviewer identity, and human approval outside model-controlled tool arguments. A recorded decision remains pending until the trusted control plane confirms the exact TrueForge session, thread, tool-call, and approval-event binding after TrueForge accepts the allow resume.
 - `createHumanApprovalRecord` is a trusted control-plane helper. The MCP tool never creates an approval and does not accept an actor field.
-- `startLoopbackMcpServer` exposes only `apply_candidate_patch({ contextId })` over local Streamable HTTP.
+- `startLoopbackMcpServer` exposes only `apply_candidate_patch({ contextId })` over local Streamable HTTP and rejects clients without the connector-only bearer token.
 - One approval ID is globally single-use within the registry, and one context consumes approval on its first application attempt whether that attempt succeeds or fails.
 
 ## Agent profiles
@@ -128,7 +128,9 @@ Sandbox-only tools operate exclusively on the prepared copy:
 
 The only implemented real-project write tool is `apply_candidate_patch`. It declares the standard MCP hints `readOnlyHint: false`, `destructiveHint: true`, `idempotentHint: false`, and `openWorldHint: false`. The installed TrueForge 0.1.4 `AgentSpec` attaches the configured connector with `require_approval_for_tools: ["apply_candidate_patch"]`. TrueForge then emits `tool.approval_required` and resumes the pending tool call only from a human `user.tool_approval` input containing the exact thread and tool-call identifiers.
 
-TrueForge 0.1.4 accepts configured MCP connectors with `type: "remote"`; its installed schema has no stdio connector variant. Phase 3 therefore uses Streamable HTTP on `127.0.0.1` or `::1` only. The tool receives only a context ID. Candidate data, project root, and `ApprovalRecord` are server-side sealed values and are all recomputed or revalidated immediately before mutation.
+TrueForge 0.1.4 accepts configured MCP connectors with `type: "remote"`; its installed schema has no stdio connector variant. Phase 3 therefore uses Streamable HTTP on `127.0.0.1` or `::1` only. A random bearer token is stored in the TrueForge connector header and required by the MCP endpoint, preventing direct unauthenticated loopback calls. The tool receives only a context ID. Candidate data, project root, and `ApprovalRecord` are server-side sealed values and are all recomputed or revalidated immediately before mutation.
+
+The ApprovalRecord contains an `approvalContext` with the exact TrueForge session, thread, tool-call, and `tool.approval_required` event identifiers. Recording the human decision does not arm it. The MCP request waits while the control plane sends `user.tool_approval`; only after TrueForge accepts that resume does an exact context confirmation make the record usable. A failed resume leaves the candidate unapplied.
 
 The target must be a canonical Git repository root with a clean working tree and `HEAD` exactly equal to the candidate base revision. Ignored additions, symlink components, Git internals, binary content, submodules, executable modes, unsupported Git objects, and noncanonical paths fail closed. No commit, push, reset, force operation, tag, branch, or remote mutation is performed.
 

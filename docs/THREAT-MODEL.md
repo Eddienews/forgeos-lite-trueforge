@@ -69,13 +69,14 @@ Internal reversible writes within the approved sandbox copy do not require repea
 - Candidate generation reads a clean original repository at one complete commit and compares it with a separate Builder repository at that same commit. The original remains unchanged until approved application.
 - Candidate operations are exact-key, sorted, unique, content-addressed add, modify, or delete records for bounded canonical UTF-8 text. Traversal, absolute paths, null bytes, Git internals, shell-like metadata, binary data, symlinks, submodules, executable modes, and unsupported Git objects fail closed.
 - The reviewer verdict identifies the Reviewer role, uses a closed approved/rejected decision, and binds both the candidate artifact hash and canonical test-evidence hash. Unknown, reasoning, conversation, and secret fields are rejected.
-- The human `ApprovalRecord` binds mission, candidate, project, base revision, candidate hash, complete reviewer-verdict hash, actor identity, decision, and time. The MCP tool cannot create the record or accept actor-controlled arguments.
-- The MCP server binds only to loopback and exposes one destructive non-idempotent tool with a strict `{ contextId }` input. Candidate, root, artifact, and approval values remain sealed in the server registry.
+- The human `ApprovalRecord` binds mission, candidate, project, base revision, candidate hash, complete reviewer-verdict hash, actor identity, decision, time, and the exact TrueForge session, thread, tool-call, and approval-event identifiers. The MCP tool cannot create the record or accept actor-controlled arguments.
+- The MCP server binds only to loopback, requires a connector-only bearer token, and exposes one destructive non-idempotent tool with a strict `{ contextId }` input. Candidate, root, artifact, and approval values remain sealed in the server registry.
+- Recording an ApprovalRecord leaves it pending. The tool waits without mutating until the trusted control plane confirms the exact gate context after TrueForge accepts `user.tool_approval`; a failed resume never arms the record.
 - The exact TrueForge 0.1.4 configuration names `apply_candidate_patch` in `require_approval_for_tools`. The positive live proof captures `tool.approval_required`, verifies no pre-approval write, resumes with `user.tool_approval`, and observes one successful application.
 - Two complete preflight passes verify the candidate, reviewer, approval, hashes, configured canonical root, exact Git head, clean tree, safe paths, target content, and full operation plan. A base change between checks fails closed.
 - Application preserves the Git head, verifies every result and the complete changed-file inventory, returns structured uncommitted working-tree evidence, and creates no commit or remote mutation.
 - Approval is consumed on the first attempt. Replays, cross-candidate use, candidate or reviewer mutation, cross-project or cross-mission approval, nonhuman actors, rejected decisions, dirty targets, and stale revisions are covered by adversarial tests.
-- The negative live proof records an exact approval, advances the disposable target base, invokes the real MCP tool, and observes rejection before the reviewed file changes.
+- The negative live proof passes a second candidate through its own real TrueForge approval event, advances the disposable target base, and observes rejection before the reviewed file changes.
 
 ## Deferred security controls
 

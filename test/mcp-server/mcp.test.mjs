@@ -26,6 +26,14 @@ import {
 
 const execFileAsync = promisify(execFile);
 const now = "2026-08-26T13:00:00.000Z";
+const authorizationToken = "phase-three-test-authorization-token-0001";
+const approvalContext = Object.freeze({
+  mechanism: "trueforge.tool_approval",
+  sessionId: "session-mcp",
+  threadId: "thread-mcp",
+  toolCallId: "call-mcp",
+  approvalEventId: "approval-event-mcp"
+});
 
 async function git(root, ...args) {
   return execFileAsync("git", args, { cwd: root, encoding: "utf8" });
@@ -98,11 +106,16 @@ function approval(candidate, overrides = {}) {
     ...createHumanApprovalRecord({
       approvalId: "approval-mcp",
       actorId: "human-reviewer",
+      approvalContext,
       candidate,
       createdAt: now
     }),
     ...overrides
   };
+}
+
+function confirm(registry, contextId, context = approvalContext) {
+  return registry.confirmHumanApproval({ contextId, approvalContext: context });
 }
 
 async function unusedPort() {
@@ -242,6 +255,39 @@ test("rejects approval reuse across registered application contexts", async (t) 
   );
 });
 
+test("does not arm an ApprovalRecord until the exact TrueForge allow is confirmed", async (t) => {
+  const state = await projectFixture();
+  t.after(state.cleanup);
+  const registry = createCandidateApplicationRegistry();
+  registry.registerContext({
+    contextId: "context-pending-allow",
+    candidate: state.candidate,
+    artifact: state.artifact,
+    projectRoot: state.projectRoot,
+    clock: () => now
+  });
+  registry.recordHumanApproval({
+    contextId: "context-pending-allow",
+    approvalRecord: approval(state.candidate)
+  });
+  assert.throws(
+    () =>
+      confirm(registry, "context-pending-allow", {
+        ...approvalContext,
+        toolCallId: "other-call"
+      }),
+    /does not match/u
+  );
+  const pendingApplication = registry.apply("context-pending-allow");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(
+    await readFile(path.join(state.projectRoot, "src/value.txt"), "utf8"),
+    "Original MCP fixture.\n"
+  );
+  confirm(registry, "context-pending-allow");
+  assert.equal((await pendingApplication).success, true);
+});
+
 test("detects candidate and ApprovalRecord mutation after registration", async (t) => {
   const candidateState = await projectFixture();
   t.after(candidateState.cleanup);
@@ -257,6 +303,7 @@ test("detects candidate and ApprovalRecord mutation after registration", async (
     contextId: "context-mutated-candidate",
     approvalRecord: approval(mutableCandidate)
   });
+  confirm(candidateRegistry, "context-mutated-candidate");
   mutableCandidate.createdAt = "2026-08-26T13:00:01.000Z";
   await assert.rejects(candidateRegistry.apply("context-mutated-candidate"), /candidate mutated/u);
 
@@ -274,6 +321,7 @@ test("detects candidate and ApprovalRecord mutation after registration", async (
     contextId: "context-mutated-approval",
     approvalRecord: mutableApproval
   });
+  confirm(approvalRegistry, "context-mutated-approval");
   mutableApproval.createdAt = "2026-08-26T13:00:01.000Z";
   await assert.rejects(approvalRegistry.apply("context-mutated-approval"), /approval mutated/u);
 });
@@ -293,6 +341,7 @@ test("invalidates approval when reviewer evidence mutates", async (t) => {
     contextId: "context-mutated-review",
     approvalRecord: approval(mutableCandidate)
   });
+  confirm(registry, "context-mutated-review");
   mutableCandidate.reviewerVerdict.createdAt = "2026-08-26T13:00:01.000Z";
   await assert.rejects(registry.apply("context-mutated-review"), /candidate mutated/u);
 });
@@ -315,6 +364,7 @@ test("consumes one approval, emits lifecycle callbacks, and prevents replay", as
     contextId: "context-success",
     approvalRecord: approval(state.candidate)
   });
+  confirm(registry, "context-success");
   const evidence = await registry.apply("context-success");
   assert.equal(evidence.success, true);
   assert.deepEqual(lifecycle, ["applying:human-reviewer", "completed:true"]);
@@ -336,6 +386,7 @@ test("consumes approval after a failed application and rolls the target back", a
     contextId: "context-failed-attempt",
     approvalRecord: approval(state.candidate)
   });
+  confirm(registry, "context-failed-attempt");
   await assert.rejects(registry.apply("context-failed-attempt"), /application failed/u);
   assert.equal(
     await readFile(path.join(state.projectRoot, "src/value.txt"), "utf8"),
@@ -362,6 +413,7 @@ test("does not misreport a successful write when a completion callback fails", a
     contextId: "context-callback-failure",
     approvalRecord: approval(state.candidate)
   });
+  confirm(registry, "context-callback-failure");
   const evidence = await registry.apply("context-callback-failure");
   const snapshot = registry.contextSnapshot("context-callback-failure");
   assert.equal(evidence.success, true);
@@ -380,10 +432,21 @@ test("exposes only the sealed context identifier through the MCP protocol", asyn
     artifact: state.artifact,
     projectRoot: state.projectRoot
   });
-  const service = await startLoopbackMcpServer({ registry, port: await unusedPort() });
+  const service = await startLoopbackMcpServer({
+    registry,
+    port: await unusedPort(),
+    authorizationToken
+  });
   t.after(() => service.close());
+  const unauthorizedClient = new Client({ name: "unauthorized-client", version: "1.0.0" });
+  await assert.rejects(
+    unauthorizedClient.connect(new StreamableHTTPClientTransport(new URL(service.url))),
+    /401|Unauthorized/u
+  );
   const client = new Client({ name: "phase-three-test-client", version: "1.0.0" });
-  const transport = new StreamableHTTPClientTransport(new URL(service.url));
+  const transport = new StreamableHTTPClientTransport(new URL(service.url), {
+    requestInit: { headers: { authorization: `Bearer ${authorizationToken}` } }
+  });
   await client.connect(transport);
   t.after(() => client.close());
   const tools = await client.listTools();
@@ -408,6 +471,7 @@ test("refuses non-loopback MCP binding", async () => {
     startLoopbackMcpServer({
       registry: createCandidateApplicationRegistry(),
       port: await unusedPort(),
+      authorizationToken,
       host: "0.0.0.0"
     }),
     /loopback host/u

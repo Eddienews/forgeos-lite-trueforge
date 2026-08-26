@@ -60,6 +60,13 @@ function approval() {
     reviewerEvidenceSha256: reviewerEvidenceHash(reviewerVerdict),
     actor: "human",
     actorId: "human-1",
+    approvalContext: {
+      mechanism: "trueforge.tool_approval",
+      sessionId: "session-1",
+      threadId: "thread-1",
+      toolCallId: "call-1",
+      approvalEventId: "approval-event-1"
+    },
     decision: "approved",
     createdAt: timestamp(2)
   };
@@ -261,6 +268,24 @@ test("binds completion evidence to the applied candidate hash", () => {
         })
       ),
     /does not match the applied candidate hash/u
+  );
+});
+
+test("binds completion evidence to the authorized changed-file inventory", () => {
+  const journal = appendThroughApplying();
+  const evidence = applicationEvidence();
+  evidence.workingTreeStatus = [{ operation: "modify", path: "src/other.js" }];
+  evidence.changedFiles = ["src/other.js"];
+  assert.throws(
+    () =>
+      journal.append(
+        eventInput(8, "mission.transitioned", {
+          fromState: "applying",
+          toState: "completed",
+          applicationEvidence: evidence
+        })
+      ),
+    /changed-file inventory does not match/u
   );
 });
 

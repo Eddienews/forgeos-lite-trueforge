@@ -116,6 +116,13 @@ function validApproval() {
     reviewerEvidenceSha256: reviewerEvidenceHash(reviewerVerdict),
     actor: "human",
     actorId: "human-1",
+    approvalContext: {
+      mechanism: "trueforge.tool_approval",
+      sessionId: "session-1",
+      threadId: "thread-1",
+      toolCallId: "call-1",
+      approvalEventId: "approval-event-1"
+    },
     decision: "approved",
     createdAt: timestamp
   };

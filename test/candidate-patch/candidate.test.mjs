@@ -8,6 +8,7 @@ import {
   realpath,
   rename,
   rm,
+  stat,
   symlink,
   unlink,
   writeFile
@@ -474,4 +475,50 @@ test("rolls back every write when final evidence validation fails", async (t) =>
   assert.deepEqual(await originalProjectSnapshot(state.original), before);
   assert.equal(await readFile(path.join(state.original, "src/alpha.txt"), "utf8"), "Alpha baseline.\n");
   assert.equal(await readFile(path.join(state.original, "src/remove.txt"), "utf8"), "Remove this file.\n");
+});
+
+test("rolls back a file whose write fails after truncation", async (t) => {
+  const state = await fixture();
+  t.after(state.cleanup);
+  const artifact = await standardArtifact(state);
+  const candidate = reviewed(artifact);
+  const before = await originalProjectSnapshot(state.original);
+  await assert.rejects(
+    applyCandidateArtifact({
+      candidate,
+      artifact,
+      projectRoot: state.original,
+      afterFileOpen: () => {
+        throw new Error("Injected write failure after open.");
+      }
+    }),
+    /application failed/u
+  );
+  assert.deepEqual(await originalProjectSnapshot(state.original), before);
+  assert.equal(await readFile(path.join(state.original, "src/alpha.txt"), "utf8"), "Alpha baseline.\n");
+});
+
+test("restores deleted-file permissions under a restrictive umask", async (t) => {
+  const state = await fixture();
+  t.after(state.cleanup);
+  const artifact = await standardArtifact(state);
+  const candidate = reviewed(artifact);
+  const removePath = path.join(state.original, "src/remove.txt");
+  await chmod(removePath, 0o644);
+  const priorUmask = process.umask(0o077);
+  try {
+    await assert.rejects(
+      applyCandidateArtifact({
+        candidate,
+        artifact,
+        projectRoot: state.original,
+        clock: () => "invalid-time"
+      }),
+      /application failed/u
+    );
+  } finally {
+    process.umask(priorUmask);
+  }
+  assert.equal((await stat(removePath)).mode & 0o777, 0o644);
+  assert.equal(await readFile(removePath, "utf8"), "Remove this file.\n");
 });

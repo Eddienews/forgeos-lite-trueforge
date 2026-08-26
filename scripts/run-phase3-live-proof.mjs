@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
   mkdir,
   mkdtemp,
@@ -13,8 +14,6 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
   candidateArtifactSha256,
   createReviewedCandidatePatch,
@@ -24,7 +23,6 @@ import {
 } from "../packages/candidate-patch/src/index.js";
 import { InMemoryMissionJournal } from "../packages/core/src/index.js";
 import {
-  APPLY_CANDIDATE_TOOL_NAME,
   createCandidateApplicationRegistry,
   createHumanApprovalRecord,
   startLoopbackMcpServer,
@@ -208,7 +206,11 @@ async function trueForgePositiveProof({ fixture, artifact, candidate, registry, 
         type: "remote",
         name: connectorName,
         url: service.url,
-        description: "Local Phase 3 approval-gated candidate application proof."
+        description: "Local Phase 3 approval-gated candidate application proof.",
+        auth: {
+          type: "header",
+          headers: { Authorization: `Bearer ${service.authorizationToken}` }
+        }
       }
     })
   });
@@ -268,6 +270,13 @@ async function trueForgePositiveProof({ fixture, artifact, candidate, registry, 
   approvalRecord = createHumanApprovalRecord({
     approvalId: "approval-positive-live",
     actorId: humanActorId,
+    approvalContext: {
+      mechanism: "trueforge.tool_approval",
+      sessionId: session.id,
+      threadId: approvalAction.thread_id,
+      toolCallId: approvalAction.tool_calls[0].id,
+      approvalEventId: approvalAction.id
+    },
     candidate,
     createdAt: proofTimestamp
   });
@@ -286,6 +295,10 @@ async function trueForgePositiveProof({ fixture, artifact, candidate, registry, 
       previous_turn_id: paused.id,
       stream: false
     })
+  });
+  registry.confirmHumanApproval({
+    contextId: "positive-application",
+    approvalContext: approvalRecord.approvalContext
   });
   console.log("STATE human approved: TrueForge accepted the tool approval resume");
   const completed = await waitForTurn(session.id, resumed.id);
@@ -311,47 +324,96 @@ async function trueForgePositiveProof({ fixture, artifact, candidate, registry, 
   };
 }
 
-async function negativeBaseDriftProof({ fixture, artifact, candidate, registry, service }) {
+async function negativeBaseDriftProof({ fixture, artifact, candidate, registry, sessionId }) {
   registry.registerContext({
     contextId: "negative-application",
     candidate,
     artifact,
     projectRoot: fixture.originalRoot
   });
-  registry.recordHumanApproval({
-    contextId: "negative-application",
-    approvalRecord: createHumanApprovalRecord({
-      approvalId: "approval-negative-live",
-      actorId: humanActorId,
-      candidate,
-      createdAt: proofTimestamp
+  const invoked = await api(`/api/v1/sessions/${sessionId}/turns`, {
+    method: "POST",
+    body: JSON.stringify({
+      input: [
+        {
+          type: "user.message",
+          content: "Apply the sealed candidate using contextId negative-application."
+        }
+      ],
+      previous_turn_id: "none",
+      stream: false
     })
   });
+  const paused = await waitForTurn(sessionId, invoked.id);
+  const approvalAction = paused.state.required_actions.find(
+    ({ type }) => type === "tool.approval_required"
+  );
+  assert.ok(approvalAction);
+  const approvalRecord = createHumanApprovalRecord({
+    approvalId: "approval-negative-live",
+    actorId: humanActorId,
+    approvalContext: {
+      mechanism: "trueforge.tool_approval",
+      sessionId,
+      threadId: approvalAction.thread_id,
+      toolCallId: approvalAction.tool_calls[0].id,
+      approvalEventId: approvalAction.id
+    },
+    candidate,
+    createdAt: proofTimestamp
+  });
+  registry.recordHumanApproval({ contextId: "negative-application", approvalRecord });
   await writeFile(path.join(fixture.originalRoot, "base-drift.txt"), "Intentional base drift.\n", "utf8");
   await git(fixture.originalRoot, "add", "base-drift.txt");
   await git(fixture.originalRoot, "commit", "--quiet", "-m", "Create intentional base drift");
-  const client = new Client({ name: "phase-three-negative-proof", version: "1.0.0" });
-  await client.connect(new StreamableHTTPClientTransport(new URL(service.url)));
-  try {
-    const response = await client.callTool({
-      name: APPLY_CANDIDATE_TOOL_NAME,
-      arguments: { contextId: "negative-application" }
-    });
-    assert.equal(response.isError, true);
-    assert.match(response.content[0].text, /HEAD does not match/u);
-    assert.equal(
-      await readFile(path.join(fixture.originalRoot, "src/proof.txt"), "utf8"),
-      "Original proof state.\n"
-    );
-    return { rejected: true, reason: response.content[0].text };
-  } finally {
-    await client.close();
-  }
+  const resumed = await api(`/api/v1/sessions/${sessionId}/turns`, {
+    method: "POST",
+    body: JSON.stringify({
+      input: [
+        {
+          type: "user.tool_approval",
+          thread_id: approvalAction.thread_id,
+          tool_call_id: approvalAction.tool_calls[0].id,
+          approval: { status: "allow" }
+        }
+      ],
+      previous_turn_id: paused.id,
+      stream: false
+    })
+  });
+  registry.confirmHumanApproval({
+    contextId: "negative-application",
+    approvalContext: approvalRecord.approvalContext
+  });
+  const completed = await waitForTurn(sessionId, resumed.id);
+  const events = await api(
+    `/api/v1/sessions/${sessionId}/turns/${completed.id}/events?limit=100&order=asc`
+  );
+  const toolResponse = events.find(({ type }) => type === "tool.response");
+  assert.ok(toolResponse);
+  assert.match(toolResponse.content, /HEAD does not match/u);
+  assert.equal(
+    await readFile(path.join(fixture.originalRoot, "src/proof.txt"), "utf8"),
+    "Original proof state.\n"
+  );
+  return {
+    approvalEventId: approvalAction.id,
+    rejected: true,
+    reason: "projectRoot HEAD does not match the candidate base revision.",
+    toolCallId: approvalAction.tool_calls[0].id,
+    trueForgeEvent: approvalAction.type
+  };
 }
 
 const temporary = await realpath(await mkdtemp(path.join(os.tmpdir(), "forgeos-phase3-live-")));
 const registry = createCandidateApplicationRegistry();
-const service = await startLoopbackMcpServer({ registry, port: await unusedPort() });
+const authorizationToken = randomUUID();
+const mcpService = await startLoopbackMcpServer({
+  registry,
+  port: await unusedPort(),
+  authorizationToken
+});
+const service = Object.freeze({ ...mcpService, authorizationToken });
 try {
   const positiveFixture = await createProjectFixture(temporary, "positive");
   const positiveCandidate = await createCandidate(positiveFixture, "positive-live");
@@ -367,7 +429,7 @@ try {
     fixture: negativeFixture,
     ...negativeCandidate,
     registry,
-    service
+    sessionId: positive.sessionId
   });
   console.log(
     JSON.stringify(

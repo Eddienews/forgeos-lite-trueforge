@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
@@ -19,6 +19,7 @@ import {
   reviewerEvidenceHash,
   sha256,
   validateApprovalRecord,
+  validateApprovalContext,
   validateCandidatePatch
 } from "@forgeos-lite/contracts";
 import * as z from "zod/v4";
@@ -63,7 +64,7 @@ export function trueForgeApprovalConfiguration(serverName) {
 export function createHumanApprovalRecord(options) {
   assertExactKeys(
     options,
-    ["approvalId", "actorId", "candidate", "createdAt"],
+    ["approvalId", "actorId", "approvalContext", "candidate", "createdAt"],
     ["decision"],
     "HumanApprovalOptions"
   );
@@ -82,10 +83,12 @@ export function createHumanApprovalRecord(options) {
     reviewerEvidenceSha256: reviewerEvidenceHash(options.candidate.reviewerVerdict),
     actor: "human",
     actorId: options.actorId,
+    approvalContext: structuredClone(options.approvalContext),
     decision: options.decision ?? "approved",
     createdAt: options.createdAt
   };
   validateApprovalRecord(approval);
+  Object.freeze(approval.approvalContext);
   return Object.freeze(approval);
 }
 
@@ -130,6 +133,9 @@ export class CandidateApplicationRegistry {
       artifactBinding: candidateArtifactSha256(options.artifact),
       approval: null,
       approvalBinding: null,
+      approvalContextBinding: null,
+      approvalConfirmed: false,
+      approvalConfirmationWaiter: null,
       attempted: false,
       applicationEvidence: null,
       applicationError: null,
@@ -168,6 +174,33 @@ export class CandidateApplicationRegistry {
     this.#approvalIds.add(options.approvalRecord.approvalId);
     context.approval = options.approvalRecord;
     context.approvalBinding = sha256(options.approvalRecord);
+    context.approvalContextBinding = sha256(options.approvalRecord.approvalContext);
+    return this.contextSnapshot(options.contextId);
+  }
+
+  confirmHumanApproval(options) {
+    assertExactKeys(
+      options,
+      ["contextId", "approvalContext"],
+      [],
+      "HumanApprovalConfirmation"
+    );
+    const context = this.#context(options.contextId);
+    if (context.approval === null) {
+      fail("Human approval cannot be confirmed before its ApprovalRecord exists.");
+    }
+    validateApprovalContext(options.approvalContext);
+    if (!hashesEqual(sha256(options.approvalContext), context.approvalContextBinding)) {
+      fail("TrueForge approval confirmation does not match the recorded approval context.");
+    }
+    if (context.attempted || context.applicationEvidence !== null) {
+      fail("Human approval cannot be confirmed after an application attempt.");
+    }
+    if (!context.approvalConfirmed) {
+      context.approvalConfirmed = true;
+      context.approvalConfirmationWaiter?.resolve();
+      context.approvalConfirmationWaiter = null;
+    }
     return this.contextSnapshot(options.contextId);
   }
 
@@ -182,6 +215,7 @@ export class CandidateApplicationRegistry {
     if (context.approval === null) {
       fail("Candidate application requires a human ApprovalRecord.");
     }
+    await this.#awaitApprovalConfirmation(context);
     this.#assertSealed(context);
     validateApprovalRecord(context.approval);
     if (!hashesEqual(sha256(context.approval), context.approvalBinding)) {
@@ -237,6 +271,7 @@ export class CandidateApplicationRegistry {
       candidateSha256: context.candidate.patchSha256,
       reviewerEvidenceSha256: reviewerEvidenceHash(context.candidate.reviewerVerdict),
       humanApprovalRecorded: context.approval !== null,
+      humanApprovalConfirmed: context.approvalConfirmed,
       attempted: context.attempted,
       applied: context.applicationEvidence !== null,
       applicationError: context.applicationError,
@@ -265,6 +300,27 @@ export class CandidateApplicationRegistry {
       fail(`Unknown candidate application context: ${contextId}.`);
     }
     return context;
+  }
+
+  async #awaitApprovalConfirmation(context) {
+    if (context.approvalConfirmed) return;
+    if (context.approvalConfirmationWaiter !== null) {
+      fail("Candidate application is already waiting for TrueForge approval confirmation.");
+    }
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        context.approvalConfirmationWaiter = null;
+        context.attempted = true;
+        context.applicationError = "Candidate application requires confirmed TrueForge human approval.";
+        reject(new TypeError("Candidate application requires confirmed TrueForge human approval."));
+      }, 5000);
+      context.approvalConfirmationWaiter = {
+        resolve: () => {
+          clearTimeout(timeout);
+          resolve();
+        }
+      };
+    });
   }
 }
 
@@ -306,12 +362,20 @@ function createProtocolServer(registry) {
 }
 
 export async function startLoopbackMcpServer(options) {
-  assertExactKeys(options, ["registry", "port"], ["host"], "LoopbackMcpServerOptions");
+  assertExactKeys(
+    options,
+    ["registry", "port", "authorizationToken"],
+    ["host"],
+    "LoopbackMcpServerOptions"
+  );
   if (!(options.registry instanceof CandidateApplicationRegistry)) {
     fail("LoopbackMcpServerOptions.registry must be a CandidateApplicationRegistry.");
   }
   if (!Number.isInteger(options.port) || options.port < 1024 || options.port > 65535) {
     fail("LoopbackMcpServerOptions.port must be an integer from 1024 through 65535.");
+  }
+  if (typeof options.authorizationToken !== "string" || options.authorizationToken.length < 32) {
+    fail("LoopbackMcpServerOptions.authorizationToken must be a strong control-plane token.");
   }
   const host = options.host ?? "127.0.0.1";
   if (host !== "127.0.0.1" && host !== "::1") {
@@ -319,6 +383,18 @@ export async function startLoopbackMcpServer(options) {
   }
   const app = createMcpExpressApp();
   app.post("/mcp", async (request, response) => {
+    const suppliedAuthorization = request.get("authorization") ?? "";
+    const expectedAuthorization = `Bearer ${options.authorizationToken}`;
+    const supplied = Buffer.from(suppliedAuthorization, "utf8");
+    const expected = Buffer.from(expectedAuthorization, "utf8");
+    if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
+      response.status(401).json({
+        jsonrpc: "2.0",
+        error: { code: -32001, message: "Unauthorized MCP client." },
+        id: null
+      });
+      return;
+    }
     const protocolServer = createProtocolServer(options.registry);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     let resourcesClosed = false;

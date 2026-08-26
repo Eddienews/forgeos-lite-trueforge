@@ -193,6 +193,12 @@ function validateTransitionPayload(currentState, payload, context, enforceContin
       ) {
         fail("completion evidence does not match the authorized candidate context.");
       }
+      if (
+        canonicalJson(payload.applicationEvidence.changedFiles) !==
+        canonicalJson(expected.affectedFiles)
+      ) {
+        fail("completion evidence changed-file inventory does not match the authorized candidate.");
+      }
     }
   }
   assertNoForbiddenFields(payload, "transition payload");
