@@ -430,6 +430,8 @@ export function validateApprovalRecord(value) {
       "approvalId",
       "missionId",
       "candidateId",
+      "projectId",
+      "baseRevision",
       "candidateSha256",
       "reviewerEvidenceSha256",
       "actor",
@@ -443,6 +445,10 @@ export function validateApprovalRecord(value) {
   assertIdentifier(value.approvalId, "ApprovalRecord.approvalId");
   assertIdentifier(value.missionId, "ApprovalRecord.missionId");
   assertIdentifier(value.candidateId, "ApprovalRecord.candidateId");
+  assertIdentifier(value.projectId, "ApprovalRecord.projectId");
+  if (typeof value.baseRevision !== "string" || !sourceRevisionPattern.test(value.baseRevision)) {
+    fail("ApprovalRecord.baseRevision must be a complete Git revision hash.");
+  }
   assertSha256(value.candidateSha256, "ApprovalRecord.candidateSha256");
   assertSha256(value.reviewerEvidenceSha256, "ApprovalRecord.reviewerEvidenceSha256");
   if (value.actor !== "human") {
@@ -476,6 +482,8 @@ export function approvalMatchesCandidate(approval, candidate) {
     candidate.reviewerVerdict.decision === "approved" &&
     approval.missionId === candidate.missionId &&
     approval.candidateId === candidate.candidateId &&
+    approval.projectId === candidate.projectId &&
+    approval.baseRevision === candidate.baseRevision &&
     hashesEqual(approval.candidateSha256, candidate.patchSha256) &&
     hashesEqual(approval.reviewerEvidenceSha256, candidate.reviewerVerdict.evidenceSha256)
   );

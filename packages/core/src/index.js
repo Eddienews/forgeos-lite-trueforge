@@ -75,7 +75,20 @@ function assertTimestamp(value, label) {
   }
 }
 
-function assertTransitionEvidence(payload) {
+function candidateBindingHash(candidate) {
+  return sha256(candidate);
+}
+
+function assertEvidenceMission(value, missionId, label) {
+  if (missionId === undefined) {
+    fail(`${label} requires the enclosing mission identifier.`);
+  }
+  if (value.missionId !== missionId) {
+    fail(`${label} belongs to a different mission.`);
+  }
+}
+
+function assertTransitionEvidence(payload, context) {
   if (payload.toState === "awaiting_approval") {
     if (!Object.hasOwn(payload, "candidate")) {
       fail("awaiting_approval requires an exact reviewed candidate.");
@@ -84,6 +97,7 @@ function assertTransitionEvidence(payload) {
     if (payload.candidate.reviewerVerdict.decision !== "approved") {
       fail("awaiting_approval requires reviewer approval.");
     }
+    assertEvidenceMission(payload.candidate, context.missionId, "awaiting_approval candidate");
   }
   if (payload.toState === "applying") {
     if (!Object.hasOwn(payload, "candidate") || !Object.hasOwn(payload, "approval")) {
@@ -94,6 +108,8 @@ function assertTransitionEvidence(payload) {
     if (!approvalMatchesCandidate(payload.approval, payload.candidate)) {
       fail("applying approval does not match the exact reviewed candidate.");
     }
+    assertEvidenceMission(payload.candidate, context.missionId, "applying candidate");
+    assertEvidenceMission(payload.approval, context.missionId, "applying approval");
   }
   if (payload.toState === "completed") {
     assertExactKeys(
@@ -123,8 +139,7 @@ function assertTransitionEvidence(payload) {
   }
 }
 
-/** Validate one deterministic state transition and its destination-specific evidence. */
-export function validateMissionTransition(currentState, payload) {
+function validateTransitionPayload(currentState, payload, context, enforceContinuity) {
   if (!stateSet.has(currentState)) {
     fail(`Unknown current mission state: ${currentState}.`);
   }
@@ -159,9 +174,35 @@ export function validateMissionTransition(currentState, payload) {
       fail(`Transition includes irrelevant evidence for ${payload.toState}: ${key}.`);
     }
   }
-  assertTransitionEvidence(payload);
+  assertTransitionEvidence(payload, context);
+  if (enforceContinuity && payload.toState === "applying") {
+    if (context.expectedCandidateBinding === undefined) {
+      fail("applying requires the candidate previously recorded for approval.");
+    }
+    if (!hashesEqual(candidateBindingHash(payload.candidate), context.expectedCandidateBinding)) {
+      fail("applying candidate differs from the candidate awaiting approval.");
+    }
+  }
+  if (enforceContinuity && payload.toState === "completed") {
+    if (context.expectedCandidateSha256 === undefined) {
+      fail("completed requires the candidate previously authorized for application.");
+    }
+    if (
+      !hashesEqual(
+        payload.applicationEvidence.candidateSha256,
+        context.expectedCandidateSha256
+      )
+    ) {
+      fail("completion evidence does not match the applied candidate hash.");
+    }
+  }
   assertNoForbiddenFields(payload, "transition payload");
   return payload.toState;
+}
+
+/** Validate one deterministic state transition and its contextual continuity evidence. */
+export function validateMissionTransition(currentState, payload, context = {}) {
+  return validateTransitionPayload(currentState, payload, context, true);
 }
 
 function eventHashInput(event) {
@@ -212,7 +253,12 @@ function validateEventInput(input) {
       fail("A mission journal must begin in draft state.");
     }
   } else {
-    validateMissionTransition(input.payload.fromState, input.payload);
+    validateTransitionPayload(
+      input.payload.fromState,
+      input.payload,
+      { missionId: input.missionId },
+      false
+    );
   }
 }
 
@@ -323,11 +369,27 @@ export function replayMissionJournal(events, options = {}) {
     fail("A mission journal must begin in draft state.");
   }
   let state = "draft";
+  let pendingCandidateBinding = null;
+  let applyingCandidateSha256 = null;
   for (const event of events.slice(1)) {
     if (event.eventType !== "mission.transitioned") {
       fail(`Unexpected event after mission creation: ${event.eventType}.`);
     }
-    state = validateMissionTransition(state, event.payload);
+    const context = { missionId: event.missionId };
+    if (event.payload.toState === "applying") {
+      context.expectedCandidateBinding = pendingCandidateBinding ?? undefined;
+    }
+    if (event.payload.toState === "completed") {
+      context.expectedCandidateSha256 = applyingCandidateSha256 ?? undefined;
+    }
+    state = validateMissionTransition(state, event.payload, context);
+    if (event.payload.toState === "awaiting_approval") {
+      pendingCandidateBinding = candidateBindingHash(event.payload.candidate);
+    }
+    if (event.payload.toState === "applying") {
+      applyingCandidateSha256 = event.payload.candidate.patchSha256;
+      pendingCandidateBinding = null;
+    }
   }
   const cachedState = options.cachedState;
   const cacheStatus =

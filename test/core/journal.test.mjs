@@ -46,6 +46,8 @@ function approval() {
     approvalId: "approval-1",
     missionId,
     candidateId: "candidate-1",
+    projectId: "project-1",
+    baseRevision: gitRevision,
     candidateSha256: patchHash,
     reviewerEvidenceSha256: evidenceHash,
     actor: "human",
@@ -91,6 +93,41 @@ function appendLegalLifecycle(journal = new InMemoryMissionJournal()) {
       eventInput(index + 2, "mission.transitioned", { fromState, toState, ...evidence })
     );
   });
+  return journal;
+}
+
+function appendThroughAwaitingApproval() {
+  const journal = new InMemoryMissionJournal();
+  journal.append(eventInput(1, "mission.created", { state: "draft" }, "human"));
+  const transitions = [
+    ["draft", "planned"],
+    ["planned", "approved"],
+    ["approved", "building"],
+    ["building", "reviewing"]
+  ];
+  transitions.forEach(([fromState, toState], index) => {
+    journal.append(eventInput(index + 2, "mission.transitioned", { fromState, toState }));
+  });
+  journal.append(
+    eventInput(6, "mission.transitioned", {
+      fromState: "reviewing",
+      toState: "awaiting_approval",
+      candidate: candidate()
+    })
+  );
+  return journal;
+}
+
+function appendThroughApplying() {
+  const journal = appendThroughAwaitingApproval();
+  journal.append(
+    eventInput(7, "mission.transitioned", {
+      fromState: "awaiting_approval",
+      toState: "applying",
+      candidate: candidate(),
+      approval: approval()
+    })
+  );
   return journal;
 }
 
@@ -153,10 +190,61 @@ test("requires valid human approval before applying", () => {
   );
 });
 
+test("rejects candidate evidence from another mission", () => {
+  const foreignCandidate = { ...candidate(), missionId: "mission-2" };
+  assert.throws(
+    () =>
+      createMissionEvent(
+        eventInput(1, "mission.transitioned", {
+          fromState: "reviewing",
+          toState: "awaiting_approval",
+          candidate: foreignCandidate
+        })
+      ),
+    /belongs to a different mission/u
+  );
+});
+
+test("rejects changing the candidate after entering awaiting approval", () => {
+  const changedCandidate = { ...candidate(), affectedFiles: ["src/other.js"] };
+  const journal = appendThroughAwaitingApproval();
+  assert.throws(
+    () =>
+      journal.append(
+        eventInput(7, "mission.transitioned", {
+          fromState: "awaiting_approval",
+          toState: "applying",
+          candidate: changedCandidate,
+          approval: approval()
+        })
+      ),
+    /differs from the candidate awaiting approval/u
+  );
+});
+
 test("requires structured application evidence before completion", () => {
   assert.throws(
     () => validateMissionTransition("applying", { fromState: "applying", toState: "completed" }),
     /applicationEvidence/u
+  );
+});
+
+test("binds completion evidence to the applied candidate hash", () => {
+  const journal = appendThroughApplying();
+  assert.throws(
+    () =>
+      journal.append(
+        eventInput(8, "mission.transitioned", {
+          fromState: "applying",
+          toState: "completed",
+          applicationEvidence: {
+            candidateSha256: "f".repeat(64),
+            appliedRevision: "d".repeat(40),
+            observedAt: timestamp(9)
+          }
+        })
+      ),
+    /does not match the applied candidate hash/u
   );
 });
 

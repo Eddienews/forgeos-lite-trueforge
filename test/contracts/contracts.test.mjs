@@ -99,6 +99,8 @@ function validApproval() {
     approvalId: "approval-1",
     missionId: "mission-1",
     candidateId: "candidate-1",
+    projectId: "project-1",
+    baseRevision: gitRevision,
     candidateSha256: patchHash,
     reviewerEvidenceSha256: evidenceHash,
     actor: "human",
@@ -279,6 +281,13 @@ test("binds reviewer verdict and human approval to the candidate hash", () => {
   changedAfterApproval.patchSha256 = "f".repeat(64);
   changedAfterApproval.reviewerVerdict.candidateSha256 = "f".repeat(64);
   assert.equal(approvalMatchesCandidate(validApproval(), changedAfterApproval), false);
+});
+
+test("binds human approval to the target project and base revision", () => {
+  const otherProject = { ...validCandidate(), projectId: "project-2" };
+  assert.equal(approvalMatchesCandidate(validApproval(), otherProject), false);
+  const otherRevision = { ...validCandidate(), baseRevision: "f".repeat(40) };
+  assert.equal(approvalMatchesCandidate(validApproval(), otherRevision), false);
 });
 
 test("rejects approval actor impersonation", () => {
