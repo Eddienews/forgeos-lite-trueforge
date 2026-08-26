@@ -53,10 +53,11 @@ async function unusedPort() {
 }
 
 async function api(baseUrl, pathname, options = {}) {
-  const { allowNotFound = false, ...fetchOptions } = options;
+  const { allowNotFound = false, timeoutMs = 30_000, ...fetchOptions } = options;
   const response = await fetch(new URL(pathname, baseUrl), {
     ...fetchOptions,
-    headers: { "content-type": "application/json", ...fetchOptions.headers }
+    headers: { "content-type": "application/json", ...fetchOptions.headers },
+    signal: fetchOptions.signal ?? AbortSignal.timeout(timeoutMs)
   });
   const text = await response.text();
   let body = null;
@@ -74,12 +75,28 @@ async function api(baseUrl, pathname, options = {}) {
   return body?.data ?? body;
 }
 
-async function waitForTurn(baseUrl, sessionId, turnId) {
-  const deadline = Date.now() + 120_000;
-  while (Date.now() < deadline) {
-    const turn = await api(baseUrl, `/api/v1/sessions/${sessionId}/turns/${turnId}`);
-    if (turn.state.status !== "running") return turn;
-    await new Promise((resolve) => setTimeout(resolve, 200));
+export function pollingRequestTimeout(deadline, now = Date.now()) {
+  if (!Number.isFinite(deadline) || !Number.isFinite(now) || now >= deadline) return 1;
+  return Math.max(1, Math.min(5000, deadline - now));
+}
+
+export async function waitForTurn(baseUrl, sessionId, turnId, options = {}) {
+  const clock = options.clock ?? Date.now;
+  const request = options.request ?? api;
+  const sleep = options.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
+  const deadline = clock() + (options.deadlineMs ?? 120_000);
+  while (clock() < deadline) {
+    try {
+      const turn = await request(
+        baseUrl,
+        `/api/v1/sessions/${sessionId}/turns/${turnId}`,
+        { timeoutMs: pollingRequestTimeout(deadline, clock()) }
+      );
+      if (turn.state.status !== "running") return turn;
+    } catch (error) {
+      if (error?.name !== "TimeoutError" || clock() >= deadline) throw error;
+    }
+    await sleep(Math.min(200, Math.max(1, deadline - clock())));
   }
   throw new Error(`TrueForge turn did not finish in time: ${turnId}.`);
 }

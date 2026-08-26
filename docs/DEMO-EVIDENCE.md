@@ -48,4 +48,4 @@ The exact `npm run demo:deny` command completed in 41.8 seconds.
 
 ## Repository verification
 
-After the initial Qodo corrections, `npm run verify` passed with 166 tests, the formatting gate, the English-only gate, the lightweight secret check across 55 Git-owned text files, and `npm audit --audit-level=low` reporting zero vulnerabilities.
+After review corrections, `npm run verify` passed with 167 tests, the formatting gate, the English-only gate, the lightweight secret check across 55 Git-owned text files, and `npm audit --audit-level=low` reporting zero vulnerabilities.

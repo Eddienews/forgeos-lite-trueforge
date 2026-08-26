@@ -25,7 +25,9 @@ async function waitForServer(baseUrl, child, output) {
       throw new Error(`TrueForge stopped before startup completed. ${output().slice(-2000)}`);
     }
     try {
-      const response = await fetch(`${baseUrl}/api/v1/openapi.json`);
+      const response = await fetch(`${baseUrl}/api/v1/openapi.json`, {
+        signal: AbortSignal.timeout(1000)
+      });
       if (response.ok) return;
     } catch {
       // The local server is still starting.
@@ -83,7 +85,8 @@ export async function startLocalTrueForge(options) {
             }
           ]
         }
-      })
+      }),
+      signal: AbortSignal.timeout(15_000)
     });
     if (!response.ok) throw new Error(`TrueForge provider setup failed with HTTP ${response.status}.`);
     await response.arrayBuffer();

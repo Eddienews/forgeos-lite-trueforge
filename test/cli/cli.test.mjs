@@ -9,7 +9,9 @@ import { promisify } from "node:util";
 import { createDemoProject } from "../../scripts/create-demo-project.mjs";
 import {
   assertDeniedTurnOutcome,
-  runCleanupSteps
+  pollingRequestTimeout,
+  runCleanupSteps,
+  waitForTurn
 } from "../../packages/cli/src/demo.js";
 import {
   abbreviate,
@@ -104,6 +106,31 @@ test("cleanup attempts every step and reports each failure", async () => {
   ]);
   assert.deepEqual(calls, ["first", "second", "third"]);
   assert.deepEqual(failures, ["first: first failed", "third: third failed"]);
+});
+
+test("turn polling bounds every request by the remaining deadline", async () => {
+  let now = 100;
+  const observedTimeouts = [];
+  const turn = await waitForTurn("http://localhost:8790", "session-1", "turn-1", {
+    clock: () => now,
+    deadlineMs: 6000,
+    request: async (_baseUrl, _pathname, options) => {
+      observedTimeouts.push(options.timeoutMs);
+      now += 1000;
+      return {
+        state: {
+          status: observedTimeouts.length === 2 ? "done" : "running",
+          required_actions: []
+        }
+      };
+    },
+    sleep: async () => {
+      now += 200;
+    }
+  });
+  assert.equal(turn.state.status, "done");
+  assert.deepEqual(observedTimeouts, [5000, 4800]);
+  assert.equal(pollingRequestTimeout(1000, 1000), 1);
 });
 
 test("presentation helpers produce concise public evidence", () => {
