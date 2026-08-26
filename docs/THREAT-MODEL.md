@@ -49,14 +49,28 @@ Internal reversible writes within the approved sandbox copy do not require repea
 - Mission events use deterministic canonical JSON and a continuous SHA-256 hash chain.
 - Replay derives current state and explicitly reports cache divergence.
 
+## Implemented Phase 2 controls
+
+- The TrueForge adapter accepts only exact-key lifecycle execution requests and rejects unknown actions or fields.
+- The adapter selects one command already declared in a validated Phase 1 manifest and derives fixed Node.js argv internally. It exposes no public shell-string API.
+- The configured workspace root must be an absolute, canonical, non-root host directory and cannot be a symlink.
+- The TrueForge-created session workspace must equal or descend from that configured root.
+- Working directories remain normalized Phase 1 relative paths. Every existing component is checked, symlinks are rejected, and the canonical result must remain inside the bound workspace.
+- Execution environment keys must be declared by the project manifest; malformed, undeclared, and secret-bearing keys fail closed. Environment values are not included in public evidence.
+- Runtime evidence uses an exact public shape and recursively rejects private reasoning, conversation history, secrets, and unknown fields.
+- Driver startup, execution, timeout, shutdown, and execution-after-close behavior have separate tests.
+- The TrueForge HTTP driver accepts only a loopback endpoint and checks the merged sandbox tool call against the exact derived command, working directory, and environment.
+- A live TrueForge 0.1.4 proof runs `npm test` in a disposable local sandbox, creates one fixture result file, captures exit and output evidence, verifies containment, and closes the session.
+
 ## Deferred security controls
 
 - The hackathon TrueForge version has not yet demonstrated the approval-required MCP path for this project.
-- Sandbox confinement and persistence have not yet been tested with ForgeOS Lite code.
-- Runtime policies are validated but not executed.
-- Symlink-aware filesystem containment and durable replay protection require later implementation.
+- Node.js install, test, and build policies are implemented; Python and static policy execution remain deferred.
+- Symlink-aware runtime workspace containment is implemented, but approved patch application to an external project is not.
 - The journal is in memory only; durable storage and trusted anchor persistence are not implemented.
-- No production security guarantee is made by the Phase 1 foundation.
+- TrueForge 0.1.4 exposes combined sandbox command output rather than separate stdout and stderr fields. ForgeOS Lite preserves an empty stderr channel when no separate upstream value exists.
+- HTTP command dispatch is model-mediated. Substitution is detected from merged events and reported, while TrueForge's local sandbox remains the pre-execution host-confinement control.
+- No production security guarantee is made by the Phase 2 foundation.
 
 ## Language and supply-chain content
 

@@ -35,14 +35,18 @@ Phase 1 implementation status on this branch:
 - An in-memory event journal provides canonical SHA-256 chaining, idempotent replay, trusted anchors, and cache-divergence reporting.
 - TrueForge integration, MCP tools, filesystem operations, command execution, durable persistence, server, and UI remain deferred.
 
-### PR 2: TrueForge profiles and sandbox project tools
+### PR 2: TrueForge session adapter and isolated execution foundation
 
-Branch: `feat/trueforge-sandbox-tools`
+Branch: `feat/trueforge-session-foundation`
 
-- Coordinator, Builder, and Reviewer profiles.
-- TrueForge adapter and event mapping.
-- Read-only and sandbox-only MCP tools.
-- Node.js, Python, and static runtime policies.
+- Dedicated TrueForge adapter and replaceable driver boundary.
+- Controlled execution-only session lifecycle.
+- Node.js structured policy execution inside one confined workspace.
+- Normalized execution, failure, and timeout evidence.
+- Unit and adversarial tests with deterministic fake runtimes.
+- One real TrueForge 0.1.4 sandbox execution in a disposable fixture.
+
+Phase 2 explicitly defers MCP tools, approval-required patch application, candidate generation, durable mission-journal storage, the Reviewer runtime, the backend server, the interface, and deployment.
 
 ### PR 3: Reviewed candidate patch approval
 

@@ -1,0 +1,9 @@
+{
+  "name": "@forgeos-lite/runtime-trueforge",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.js",
+  "dependencies": {
+    "@forgeos-lite/contracts": "*"
+  }
+}
