@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
-import { access, lstat, mkdir, realpath } from "node:fs/promises";
+import { access, chmod, lstat, mkdir, realpath } from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -39,6 +39,36 @@ async function confirmPortBinding() {
   await new Promise((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
+}
+
+export async function ensurePrivateTemporaryRoot(temporaryRoot) {
+  await mkdir(temporaryRoot, { recursive: true, mode: 0o700 });
+  let details = await lstat(temporaryRoot);
+  if (!details.isDirectory() || details.isSymbolicLink()) {
+    throw new Error(`${temporaryRoot} must be a real directory, not a symlink.`);
+  }
+  const currentUserId = process.getuid?.();
+  if (currentUserId !== undefined && details.uid !== currentUserId) {
+    throw new Error(`${temporaryRoot} must be owned by the current user.`);
+  }
+  if ((details.mode & 0o777) !== 0o700) {
+    await chmod(temporaryRoot, 0o700);
+    details = await lstat(temporaryRoot);
+  }
+  if (
+    !details.isDirectory() ||
+    details.isSymbolicLink() ||
+    (currentUserId !== undefined && details.uid !== currentUserId) ||
+    (details.mode & 0o777) !== 0o700
+  ) {
+    throw new Error(`${temporaryRoot} must remain a private current-user directory with mode 0700.`);
+  }
+  const resolvedBeforeAccess = await realpath(temporaryRoot);
+  await access(temporaryRoot, constants.R_OK | constants.W_OK | constants.X_OK);
+  if ((await realpath(temporaryRoot)) !== resolvedBeforeAccess) {
+    throw new Error(`${temporaryRoot} changed during its security check.`);
+  }
+  return resolvedBeforeAccess;
 }
 
 async function trueForgeCandidate(repositoryRoot, configuredBinary) {
@@ -93,14 +123,8 @@ export async function runPreflight(options) {
   checks.push(`TrueForge ${trueForge.version}`);
 
   const temporaryRoot = "/tmp/forgeos-lite";
-  await mkdir(temporaryRoot, { recursive: true, mode: 0o700 });
-  const temporaryDetails = await lstat(temporaryRoot);
-  if (!temporaryDetails.isDirectory() || temporaryDetails.isSymbolicLink()) {
-    throw new Error("/tmp/forgeos-lite must be a real directory, not a symlink.");
-  }
-  await realpath(temporaryRoot);
-  await access(temporaryRoot, constants.R_OK | constants.W_OK | constants.X_OK);
-  checks.push("short writable TMPDIR /tmp/forgeos-lite");
+  await ensurePrivateTemporaryRoot(temporaryRoot);
+  checks.push("private short TMPDIR /tmp/forgeos-lite");
 
   await confirmPortBinding();
   await confirmPortBinding();

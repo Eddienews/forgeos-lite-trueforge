@@ -53,9 +53,10 @@ async function unusedPort() {
 }
 
 async function api(baseUrl, pathname, options = {}) {
+  const { allowNotFound = false, ...fetchOptions } = options;
   const response = await fetch(new URL(pathname, baseUrl), {
-    ...options,
-    headers: { "content-type": "application/json", ...options.headers }
+    ...fetchOptions,
+    headers: { "content-type": "application/json", ...fetchOptions.headers }
   });
   const text = await response.text();
   let body = null;
@@ -66,6 +67,7 @@ async function api(baseUrl, pathname, options = {}) {
       body = text;
     }
   }
+  if (allowNotFound && response.status === 404) return null;
   if (!response.ok) {
     throw new Error(`TrueForge API ${response.status} at ${pathname}.`);
   }
@@ -281,6 +283,38 @@ async function removeDemoSandboxes(sandboxRoot, workspaceRoots) {
   }
 }
 
+function safeMessage(error) {
+  return error instanceof Error ? error.message.slice(0, 4096) : "unknown failure";
+}
+
+export function assertDeniedTurnOutcome(turn, events, toolCallId) {
+  assert.equal(turn.state.status, "done", "TrueForge must complete the denial turn.");
+  assert.deepEqual(
+    turn.state.required_actions,
+    [],
+    "TrueForge denial must leave no pending approval action."
+  );
+  const successfulResponse = events.find(
+    (event) =>
+      event.type === "tool.response" &&
+      event.tool_call_id === toolCallId &&
+      /"success":true/u.test(event.content ?? "")
+  );
+  assert.equal(successfulResponse, undefined, "A denied tool call must not report application success.");
+}
+
+export async function runCleanupSteps(steps) {
+  const failures = [];
+  for (const [label, action] of steps) {
+    try {
+      await action();
+    } catch (error) {
+      failures.push(`${label}: ${safeMessage(error)}`);
+    }
+  }
+  return failures;
+}
+
 function printLines(lines) {
   for (const line of lines) console.log(line);
 }
@@ -300,6 +334,8 @@ export async function runDemo(options) {
   let mcpService;
   let approvalSessionId;
   let connectorConfigured = false;
+  let primaryError = null;
+  let cleanupFailures = [];
   const result = {
     model: "gpt-5.4-mini",
     trueForgeVersion: preflight.trueForgeVersion,
@@ -414,7 +450,16 @@ export async function runDemo(options) {
         approval.toolCall,
         "deny"
       );
-      await waitForTurn(trueForge.baseUrl, approvalSession.id, denied.id);
+      const deniedCompleted = await waitForTurn(
+        trueForge.baseUrl,
+        approvalSession.id,
+        denied.id
+      );
+      const deniedEvents = await api(
+        trueForge.baseUrl,
+        `/api/v1/sessions/${approvalSession.id}/turns/${deniedCompleted.id}/events?limit=100&order=asc`
+      );
+      assertDeniedTurnOutcome(deniedCompleted, deniedEvents, approval.toolCall.id);
       let reuseRejected = false;
       try {
         const replay = await answerApproval(
@@ -499,25 +544,50 @@ export async function runDemo(options) {
       console.log(stage("MISSION COMPLETE"));
       console.log('Exact result: greeting now returns "Hello from the TrueForge sandbox."');
     }
+  } catch (error) {
+    primaryError = error;
   } finally {
-    if (approvalSessionId !== undefined && trueForge !== undefined) {
-      await api(trueForge.baseUrl, `/api/v1/sessions/${approvalSessionId}`, {
-        method: "DELETE"
-      }).catch(() => undefined);
-    }
-    if (connectorConfigured && trueForge !== undefined) {
-      await api(
-        trueForge.baseUrl,
-        `/api/v1/settings/mcp-servers/${encodeURIComponent(connectorName)}`,
-        { method: "DELETE" }
-      ).catch(() => undefined);
-    }
-    await mcpService?.close().catch(() => undefined);
-    await trueForge?.close().catch(() => undefined);
-    await removeDemoSandboxes(preflight.sandboxRoot, workspaceRoots);
-    if (!options.keepProject) await rm(demoRoot, { recursive: true, force: true });
-    result.cleanup = "completed";
+    cleanupFailures = await runCleanupSteps([
+      ["TrueForge approval session", async () => {
+        if (approvalSessionId !== undefined && trueForge !== undefined) {
+          await api(trueForge.baseUrl, `/api/v1/sessions/${approvalSessionId}`, {
+            method: "DELETE",
+            allowNotFound: true
+          });
+        }
+      }],
+      ["TrueForge MCP connector", async () => {
+        if (connectorConfigured && trueForge !== undefined) {
+          await api(
+            trueForge.baseUrl,
+            `/api/v1/settings/mcp-servers/${encodeURIComponent(connectorName)}`,
+            { method: "DELETE", allowNotFound: true }
+          );
+        }
+      }],
+      ["MCP server", async () => mcpService?.close()],
+      ["TrueForge service", async () => trueForge?.close()],
+      ["TrueForge demo sandboxes", async () => {
+        await removeDemoSandboxes(preflight.sandboxRoot, workspaceRoots);
+      }],
+      ["disposable fixture", async () => {
+        if (!options.keepProject) await rm(demoRoot, { recursive: true, force: true });
+      }]
+    ]);
+    result.cleanup = cleanupFailures.length === 0 ? "completed" : "failed";
     result.durationMs = Math.round(performance.now() - startedAt);
+  }
+  if (primaryError !== null) {
+    if (cleanupFailures.length > 0) {
+      throw new Error(
+        `${safeMessage(primaryError)} Cleanup also failed: ${cleanupFailures.join("; ")}`,
+        { cause: primaryError }
+      );
+    }
+    throw primaryError;
+  }
+  if (cleanupFailures.length > 0) {
+    throw new Error(`Demo completed, but cleanup failed: ${cleanupFailures.join("; ")}`);
   }
   console.log(stage("CLEAN SHUTDOWN"));
   console.log("TrueForge session, MCP server, connector, and temporary workspaces closed.");

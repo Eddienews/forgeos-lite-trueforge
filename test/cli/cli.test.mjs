@@ -1,12 +1,16 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, realpath, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 
 import { createDemoProject } from "../../scripts/create-demo-project.mjs";
+import {
+  assertDeniedTurnOutcome,
+  runCleanupSteps
+} from "../../packages/cli/src/demo.js";
 import {
   abbreviate,
   candidateSummaryLines,
@@ -16,6 +20,7 @@ import {
   stage
 } from "../../packages/cli/src/presentation.js";
 import {
+  ensurePrivateTemporaryRoot,
   nodeVersionCompatible,
   usableApiKey
 } from "../../packages/cli/src/preflight.js";
@@ -39,6 +44,66 @@ test("demo argument parsing keeps the primary path simple", () => {
   });
   assert.throws(() => parseArguments(["check", "--verbose"]), /does not accept options/u);
   assert.throws(() => parseArguments(["unknown"]), /Unknown ForgeOS Lite command/u);
+});
+
+test("preflight hardens its current-user temporary root", async () => {
+  const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "forgeos-preflight-test-")));
+  try {
+    await chmod(root, 0o755);
+    assert.equal((await stat(root)).mode & 0o777, 0o755);
+    assert.equal(await ensurePrivateTemporaryRoot(root), root);
+    assert.equal((await stat(root)).mode & 0o777, 0o700);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("denial outcome requires a completed turn without successful application", () => {
+  const completed = { state: { status: "done", required_actions: [] } };
+  assert.doesNotThrow(() => assertDeniedTurnOutcome(completed, [], "tool-call-1"));
+  assert.throws(
+    () =>
+      assertDeniedTurnOutcome(
+        { state: { status: "failed", required_actions: [] } },
+        [],
+        "tool-call-1"
+      ),
+    /complete the denial turn/u
+  );
+  assert.throws(
+    () =>
+      assertDeniedTurnOutcome(
+        completed,
+        [
+          {
+            type: "tool.response",
+            tool_call_id: "tool-call-1",
+            content: '{"success":true}'
+          }
+        ],
+        "tool-call-1"
+      ),
+    /must not report application success/u
+  );
+});
+
+test("cleanup attempts every step and reports each failure", async () => {
+  const calls = [];
+  const failures = await runCleanupSteps([
+    ["first", async () => {
+      calls.push("first");
+      throw new Error("first failed");
+    }],
+    ["second", async () => {
+      calls.push("second");
+    }],
+    ["third", async () => {
+      calls.push("third");
+      throw new Error("third failed");
+    }]
+  ]);
+  assert.deepEqual(calls, ["first", "second", "third"]);
+  assert.deepEqual(failures, ["first: first failed", "third: third failed"]);
 });
 
 test("presentation helpers produce concise public evidence", () => {

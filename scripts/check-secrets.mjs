@@ -33,7 +33,14 @@ export async function scanRepositorySecrets(root = repositoryRoot) {
   const files = [];
   for (const relativePath of stdout.split("\0").filter(Boolean)) {
     const filePath = path.join(root, relativePath);
-    const content = decodeOwnedText(filePath, await readFile(filePath));
+    let buffer;
+    try {
+      buffer = await readFile(filePath);
+    } catch (error) {
+      if (error?.code === "ENOENT") continue;
+      throw error;
+    }
+    const content = decodeOwnedText(filePath, buffer);
     if (content !== null) files.push({ filePath, content });
   }
   const findings = [];
