@@ -40,7 +40,7 @@ No substantive code should be merged without Qodo review evidence.
 ## Qodo Code Review Evidence
 
 - [Phase 0 governance and repository bootstrap](https://github.com/Eddienews/forgeos-lite-trueforge/pull/1): Qodo findings were resolved before the human-approved squash merge.
-- [Phase 1 mission contracts, state machine, and security boundaries](https://github.com/Eddienews/forgeos-lite-trueforge/pull/2): the initial Qodo review found four valid continuity issues. Follow-up work binds approval to the target project and base revision, rejects cross-mission evidence, preserves candidate identity from review through application, and binds completion evidence to the applied candidate hash. Follow-up review is required before merge.
+- [Phase 1 mission contracts, state machine, and security boundaries](https://github.com/Eddienews/forgeos-lite-trueforge/pull/2): the initial Qodo review found four valid continuity issues. Follow-up work binds approval to the target project and base revision, rejects cross-mission evidence, preserves candidate identity from review through application, and binds completion evidence to the applied candidate hash. An additional automated review identified that the verdict digest also needed to be recomputed from canonical test evidence; that binding and its regression coverage were added. Follow-up review is required before merge.
 
 ## License and marks
 

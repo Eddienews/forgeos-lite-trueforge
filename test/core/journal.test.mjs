@@ -8,15 +8,21 @@ import {
   validateMissionTransition,
   verifyMissionJournal
 } from "../../packages/core/src/index.js";
+import { sha256 } from "../../packages/contracts/src/index.js";
 
 const missionId = "mission-1";
 const patchHash = "b".repeat(64);
-const evidenceHash = "c".repeat(64);
 const gitRevision = "a".repeat(40);
 
 function timestamp(index) {
   return new Date(Date.UTC(2026, 7, 26, 4, 0, index)).toISOString();
 }
+
+function testEvidence() {
+  return [{ kind: "test-run", summary: "Tests passed.", observedAt: timestamp(1) }];
+}
+
+const evidenceHash = sha256(testEvidence());
 
 function candidate() {
   return {
@@ -28,9 +34,7 @@ function candidate() {
     patchPath: "artifacts/candidate.patch",
     patchSha256: patchHash,
     affectedFiles: ["src/index.js"],
-    testEvidence: [
-      { kind: "test-run", summary: "Tests passed.", observedAt: timestamp(1) }
-    ],
+    testEvidence: testEvidence(),
     reviewerVerdict: {
       decision: "approved",
       candidateSha256: patchHash,

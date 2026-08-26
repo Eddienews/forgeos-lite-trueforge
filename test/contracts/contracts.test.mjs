@@ -21,7 +21,19 @@ import {
 const timestamp = "2026-08-26T04:00:00.000Z";
 const gitRevision = "a".repeat(40);
 const patchHash = "b".repeat(64);
-const evidenceHash = "c".repeat(64);
+
+function validTestEvidence() {
+  return [
+    {
+      kind: "test-run",
+      summary: "All declared tests passed.",
+      observedAt: timestamp,
+      artifactSha256: "d".repeat(64)
+    }
+  ];
+}
+
+const evidenceHash = sha256(validTestEvidence());
 
 function validManifest() {
   return {
@@ -76,14 +88,7 @@ function validCandidate() {
     patchPath: "artifacts/candidate.patch",
     patchSha256: patchHash,
     affectedFiles: ["src/index.js"],
-    testEvidence: [
-      {
-        kind: "test-run",
-        summary: "All declared tests passed.",
-        observedAt: timestamp,
-        artifactSha256: "d".repeat(64)
-      }
-    ],
+    testEvidence: validTestEvidence(),
     reviewerVerdict: {
       decision: "approved",
       candidateSha256: patchHash,
@@ -281,6 +286,12 @@ test("binds reviewer verdict and human approval to the candidate hash", () => {
   changedAfterApproval.patchSha256 = "f".repeat(64);
   changedAfterApproval.reviewerVerdict.candidateSha256 = "f".repeat(64);
   assert.equal(approvalMatchesCandidate(validApproval(), changedAfterApproval), false);
+});
+
+test("binds the reviewer verdict to canonical test evidence", () => {
+  const candidate = validCandidate();
+  candidate.testEvidence[0].summary = "Evidence was replaced after review.";
+  assert.throws(() => validateCandidatePatch(candidate), /canonical test evidence/u);
 });
 
 test("binds human approval to the target project and base revision", () => {

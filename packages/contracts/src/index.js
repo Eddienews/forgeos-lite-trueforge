@@ -416,6 +416,9 @@ export function validateCandidatePatch(value) {
   if (!hashesEqual(value.patchSha256, value.reviewerVerdict.candidateSha256)) {
     fail("CandidatePatch reviewer verdict is not bound to the patch hash.");
   }
+  if (!hashesEqual(sha256(value.testEvidence), value.reviewerVerdict.evidenceSha256)) {
+    fail("CandidatePatch reviewer verdict is not bound to the canonical test evidence.");
+  }
   assertIsoTimestamp(value.createdAt, "CandidatePatch.createdAt");
   assertNoForbiddenFields(value, "CandidatePatch");
   return value;
