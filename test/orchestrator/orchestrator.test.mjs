@@ -149,6 +149,84 @@ function projectInput(state, overrides = {}) {
   };
 }
 
+function runtimeEvidence(policyId, executionId, overrides = {}) {
+  return {
+    executionId,
+    missionId: "mission-review-boundary",
+    startedAt: "2026-08-26T12:00:00.000Z",
+    completedAt: "2026-08-26T12:00:01.000Z",
+    exitStatus: 0,
+    command: { kind: "policy", policyId, arguments: [] },
+    workingDirectory: "builder-workspace-review",
+    stdout: `${policyId} passed\n`,
+    stderr: "",
+    timedOut: false,
+    runtimeError: null,
+    ...overrides
+  };
+}
+
+function reviewerBoundaryFixture() {
+  const timestamp = "2026-08-26T12:00:00.000Z";
+  return {
+    mission: {
+      schemaVersion: "1",
+      missionId: "mission-review-boundary",
+      projectId: "project-review-boundary",
+      title: "Review boundary fixture",
+      brief: "Review one bounded candidate with exact runtime evidence.",
+      successCriteria: ["Declared validation passes."],
+      state: "reviewing",
+      authority: authority(["src/a.js"]),
+      createdAt: timestamp,
+      updatedAt: timestamp
+    },
+    manifest: {
+      schemaVersion: "1",
+      projectId: "project-review-boundary",
+      name: "Review Boundary Fixture",
+      runtime: "node",
+      installCommand: { kind: "not_applicable" },
+      testCommand: { kind: "policy", policyId: "npm-test", arguments: [] },
+      buildCommand: { kind: "policy", policyId: "npm-run-build", arguments: [] },
+      allowedEnvironmentKeys: ["CI", "TZ"],
+      sourceRevision: "a".repeat(40)
+    },
+    artifact: {
+      schemaVersion: "1",
+      baseRevision: "a".repeat(40),
+      operations: [
+        {
+          operation: "add",
+          path: "src/a.js",
+          content: "export const a = true;\n",
+          contentSha256: "af96f0481fa32769cb5faced02ae44b2de5152e3710f5166ab12cd5d30a308a2"
+        }
+      ]
+    },
+    builderResult: {
+      schemaVersion: "1",
+      missionId: "mission-review-boundary",
+      builderAgentId: "builder-review",
+      workspaceId: "builder-workspace-review",
+      baseRevision: "a".repeat(40),
+      executedPolicyIds: ["npm-run-build"],
+      executionEvidenceIds: ["builder-execution"],
+      changedFiles: ["src/a.js"],
+      completionState: "completed",
+      failureState: "none",
+      startedAt: timestamp,
+      completedAt: timestamp
+    },
+    validationEvidence: [
+      runtimeEvidence("npm-run-build", "validation-build"),
+      runtimeEvidence("npm-test", "validation-test")
+    ],
+    expectedScope: ["src/a.js"],
+    maximumChangedFiles: 1
+  };
+}
+
 function fakeDriver(state, behavior = {}) {
   const calls = [];
   let buildCount = 0;
@@ -204,11 +282,28 @@ function fakeDriver(state, behavior = {}) {
             if (behavior.emptyRuntimeCache === true) {
               await mkdir(path.join(path.dirname(input.workingDirectory), ".runtime-cache"));
             }
+            if (behavior.excessiveOutsideDirectories === true) {
+              const fanoutRoot = path.join(path.dirname(input.workingDirectory), "runtime-fanout");
+              await mkdir(fanoutRoot);
+              for (let offset = 0; offset < 20_001; offset += 250) {
+                await Promise.all(
+                  Array.from({ length: Math.min(250, 20_001 - offset) }, (_, index) =>
+                    mkdir(path.join(fanoutRoot, `entry-${offset + index}`))
+                  )
+                );
+              }
+            }
             if (behavior.symlinkChange === true) {
               await rm(path.join(input.workingDirectory, "src/value.js"));
               await symlink("../build.mjs", path.join(input.workingDirectory, "src/value.js"));
             }
           }
+        }
+        if (command === "npm test" && behavior.validationMutation === true) {
+          await write(input.workingDirectory, "src/value.js", "export const value = 3;\n");
+        }
+        if (command === "npm test" && behavior.validationTraversal === true) {
+          await write(path.dirname(input.workingDirectory), "validation-outside.txt", "forbidden\n");
         }
         if (command === "npm test" && behavior.testFailure === true) {
           return {
@@ -382,7 +477,10 @@ for (const [name, behavior, pattern] of [
   ["Builder runtime failure", { runtimeFailure: true }, /Builder execution failed/u],
   ["Builder timeout", { timeout: true }, /Builder execution failed/u],
   ["test failure", { testFailure: true }, /validation failed/u],
-  ["build validation failure", { buildFailureAt: 2 }, /validation failed/u]
+  ["build validation failure", { buildFailureAt: 2 }, /validation failed/u],
+  ["validation candidate mutation", { validationMutation: true }, /changed candidate content/u],
+  ["validation workspace traversal", { validationTraversal: true }, /outside the isolated/u],
+  ["excessive outside directory fanout", { excessiveOutsideDirectories: true }, /safety bound/u]
 ]) {
   test(`fails closed for ${name}`, async (t) => {
     const state = await fixture();
@@ -567,6 +665,48 @@ test("Reviewer rejects missing evidence, base mismatch, and excessive file count
   });
   assert.equal(tooMany.decision, "rejected");
   assert.match(tooMany.summary, /file-count/u);
+});
+
+test("Reviewer binds expected scope to mission authority", () => {
+  const input = reviewerBoundaryFixture();
+  assert.equal(reviewCandidateEvidence(input).decision, "approved");
+  const expanded = {
+    ...input,
+    expectedScope: ["src/a.js", "src/b.js"]
+  };
+  const review = reviewCandidateEvidence(expanded);
+  assert.equal(review.decision, "rejected");
+  assert.match(review.summary, /mission authority/u);
+});
+
+test("Reviewer requires exact mission and workspace-bound validation evidence", () => {
+  const input = reviewerBoundaryFixture();
+  for (const validationEvidence of [
+    input.validationEvidence.map((entry, index) =>
+      index === 0 ? { ...entry, missionId: "mission-other" } : entry
+    ),
+    input.validationEvidence.map((entry, index) =>
+      index === 0 ? { ...entry, workingDirectory: "builder-workspace-other" } : entry
+    ),
+    [...input.validationEvidence, runtimeEvidence("npm-test", "validation-extra")],
+    [input.validationEvidence[0], { malformed: true }]
+  ]) {
+    const review = reviewCandidateEvidence({ ...input, validationEvidence });
+    assert.equal(review.decision, "rejected");
+  }
+});
+
+test("Reviewer requires exact Builder transformation proof", () => {
+  const input = reviewerBoundaryFixture();
+  const review = reviewCandidateEvidence({
+    ...input,
+    builderResult: {
+      ...input.builderResult,
+      executedPolicyIds: ["npm-test"]
+    }
+  });
+  assert.equal(review.decision, "rejected");
+  assert.match(review.summary, /transformation policy/u);
 });
 
 test("enforces BuilderResult evidence and authority boundaries", () => {

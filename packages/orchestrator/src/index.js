@@ -490,6 +490,12 @@ export function validateBuilderResult(value) {
   if (value.completionState === "completed" && value.executionEvidenceIds.length === 0) {
     fail("BuilderResult.executionEvidenceIds cannot be empty after completion.");
   }
+  if (
+    value.completionState === "completed" &&
+    value.executionEvidenceIds.length !== value.executedPolicyIds.length
+  ) {
+    fail("BuilderResult must bind exactly one execution evidence identifier to each policy.");
+  }
   assertCanonicalStrings(value.changedFiles, "BuilderResult.changedFiles", 1000);
   value.changedFiles.forEach((entry, index) =>
     assertCandidatePath(entry, `BuilderResult.changedFiles[${index}]`)
@@ -542,6 +548,15 @@ export function reviewCandidateEvidence(input) {
     validateBuilderResult(input.builderResult);
     assertCanonicalStrings(input.expectedScope, "CandidateReviewInput.expectedScope", 64);
     assertInteger(input.maximumChangedFiles, "CandidateReviewInput.maximumChangedFiles", 1, 100);
+    if (input.manifest.projectId !== input.mission.projectId) {
+      throw new Error("The project manifest belongs to another mission project.");
+    }
+    if (
+      canonicalJson(input.expectedScope) !==
+      canonicalJson(input.mission.authority.projectPaths)
+    ) {
+      throw new Error("Reviewer expected scope does not match mission authority.");
+    }
     if (input.builderResult.completionState !== "completed") {
       throw new Error("Builder evidence does not report completion.");
     }
@@ -564,23 +579,59 @@ export function reviewCandidateEvidence(input) {
     if (canonicalJson(affectedFiles) !== canonicalJson(input.builderResult.changedFiles)) {
       throw new Error("Builder changed-file evidence is incomplete or does not match the candidate.");
     }
-    if (!Array.isArray(input.validationEvidence) || input.validationEvidence.length === 0) {
-      throw new Error("Required validation execution evidence is missing.");
+    const requiredBuilderPolicies = [
+      input.manifest.installCommand,
+      input.manifest.buildCommand
+    ]
+      .filter((entry) => entry.kind === "policy")
+      .map((entry) => entry.policyId)
+      .sort((left, right) => left.localeCompare(right));
+    if (
+      canonicalJson(input.builderResult.executedPolicyIds) !==
+      canonicalJson(requiredBuilderPolicies)
+    ) {
+      throw new Error("Builder evidence does not prove every declared transformation policy.");
     }
     const requiredPolicies = [input.manifest.buildCommand, input.manifest.testCommand]
       .filter((entry) => entry.kind === "policy")
-      .map((entry) => entry.policyId);
-    for (const policyId of requiredPolicies) {
-      const matching = input.validationEvidence.filter(
-        (entry) => entry?.command?.policyId === policyId
+      .map((entry) => entry.policyId)
+      .sort((left, right) => left.localeCompare(right));
+    if (
+      !Array.isArray(input.validationEvidence) ||
+      input.validationEvidence.length !== requiredPolicies.length
+    ) {
+      throw new Error(
+        "Required validation evidence is missing or does not exactly match the declared policy inventory."
       );
-      if (matching.length !== 1) {
-        throw new Error(`Required validation evidence is missing or duplicated: ${policyId}.`);
+    }
+    const validationPolicies = [];
+    const validationExecutionIds = new Set();
+    for (const evidence of input.validationEvidence) {
+      validateRuntimeEvidence(evidence);
+      if (evidence.missionId !== input.mission.missionId) {
+        throw new Error("Validation evidence belongs to another mission.");
       }
-      validateRuntimeEvidence(matching[0]);
-      if (!validationSucceeded(matching[0])) {
-        throw new Error(`Required validation policy failed: ${policyId}.`);
+      if (evidence.workingDirectory !== input.builderResult.workspaceId) {
+        throw new Error("Validation evidence belongs to another Builder workspace.");
       }
+      if (!requiredPolicies.includes(evidence.command.policyId)) {
+        throw new Error(`Validation evidence uses an undeclared policy: ${evidence.command.policyId}.`);
+      }
+      if (validationExecutionIds.has(evidence.executionId)) {
+        throw new Error("Validation evidence contains a duplicate execution identifier.");
+      }
+      if (input.builderResult.executionEvidenceIds.includes(evidence.executionId)) {
+        throw new Error("Validation evidence cannot reuse Builder execution evidence.");
+      }
+      validationExecutionIds.add(evidence.executionId);
+      validationPolicies.push(evidence.command.policyId);
+      if (!validationSucceeded(evidence)) {
+        throw new Error(`Required validation policy failed: ${evidence.command.policyId}.`);
+      }
+    }
+    validationPolicies.sort((left, right) => left.localeCompare(right));
+    if (canonicalJson(validationPolicies) !== canonicalJson(requiredPolicies)) {
+      throw new Error("Validation evidence is missing or duplicates a declared policy.");
     }
     const reviewer = getAgentProfile("reviewer");
     if (
@@ -621,6 +672,7 @@ async function listChangedFiles(root) {
 
 async function fingerprintTree(root, excludedTopLevel = new Set()) {
   const entries = [];
+  let totalEntries = 0;
   let totalBytes = 0;
   async function visit(current, relative) {
     const names = await readdir(current);
@@ -630,13 +682,17 @@ async function fingerprintTree(root, excludedTopLevel = new Set()) {
       const target = path.join(current, name);
       const relativePath = relative === "" ? name : `${relative}/${name}`;
       const details = await lstat(target);
+      totalEntries += 1;
+      if (totalEntries > 20_000) {
+        fail("Workspace fingerprint exceeds the Phase 4 safety bound.");
+      }
       if (details.isDirectory() && !details.isSymbolicLink()) {
         await visit(target, relativePath);
       } else if (details.isSymbolicLink()) {
         entries.push({ path: relativePath, type: "symlink", target: await readlink(target) });
       } else if (details.isFile()) {
         totalBytes += details.size;
-        if (entries.length > 20_000 || totalBytes > 100_000_000) {
+        if (totalBytes > 100_000_000) {
           fail("Workspace fingerprint exceeds the Phase 4 safety bound.");
         }
         entries.push({
@@ -1014,7 +1070,7 @@ export async function createMissionOrchestrator(options) {
           "Builder workspace does not match the admitted project base revision."
         );
       }
-      const workspaceId = nextId("workspace");
+      const workspaceId = record.builderDirectoryName;
       appendMilestone(
         record,
         "coordinator",
@@ -1121,6 +1177,13 @@ export async function createMissionOrchestrator(options) {
         evidenceIds: record.builderResult.executionEvidenceIds
       });
 
+      const builderArtifact = await generateCandidateArtifact({
+        originalRoot: record.projectRoot,
+        builderRoot: record.builderRoot,
+        baseRevision: record.manifest.sourceRevision
+      });
+      const builderArtifactSha256 = candidateArtifactSha256(builderArtifact);
+
       stage = "validation";
       appendMilestone(record, "builder", "validation.started", "Declared validation started.");
       const validationActions = ["run_build", "run_tests"];
@@ -1156,6 +1219,31 @@ export async function createMissionOrchestrator(options) {
           "Validation modified isolated Git metadata."
         );
       }
+      if (
+        !hashesEqual(
+          outsideFingerprint,
+          await fingerprintTree(record.session.workspaceRoot, new Set([record.builderDirectoryName]))
+        )
+      ) {
+        throw new OrchestrationFailure(
+          "validation_traversal",
+          "validation",
+          "Validation modified data outside the isolated project workspace."
+        );
+      }
+      const validatedArtifact = await generateCandidateArtifact({
+        originalRoot: record.projectRoot,
+        builderRoot: record.builderRoot,
+        baseRevision: record.manifest.sourceRevision
+      });
+      if (!hashesEqual(builderArtifactSha256, candidateArtifactSha256(validatedArtifact))) {
+        throw new OrchestrationFailure(
+          "validation_changed_candidate",
+          "validation",
+          "Validation changed candidate content after Builder completion."
+        );
+      }
+      record.artifact = validatedArtifact;
       appendMilestone(
         record,
         "builder",
@@ -1165,11 +1253,6 @@ export async function createMissionOrchestrator(options) {
       );
 
       stage = "candidate";
-      record.artifact = await generateCandidateArtifact({
-        originalRoot: record.projectRoot,
-        builderRoot: record.builderRoot,
-        baseRevision: record.manifest.sourceRevision
-      });
       const artifactSha256 = candidateArtifactSha256(record.artifact);
       transition(record, "reviewer", "reviewing");
       appendMilestone(record, "reviewer", "reviewer.started", "Reviewer evaluation started.");

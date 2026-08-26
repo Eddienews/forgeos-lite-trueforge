@@ -26,7 +26,7 @@ TRUEFORGE_HUMAN_ACTOR_ID=your-stable-human-id \
 npm run test:integration:approval
 ```
 
-Phase 4 verification includes 150 passing unit and adversarial tests: 126 retained regression tests from Phases 0 through 3 and 24 Phase 4 orchestration tests. Repository formatting and English-language gates pass across 43 owned files, and `npm audit --audit-level=low` reports zero vulnerabilities.
+Phase 4 verification includes 156 passing unit and adversarial tests: 126 retained regression tests from Phases 0 through 3 and 30 Phase 4 orchestration tests. Repository formatting and English-language gates pass across 43 owned files, and `npm audit --audit-level=low` reports zero vulnerabilities.
 
 Phase 4 remains intentionally fixed rather than autonomous. It defers UI, the backend/API server, durable journal persistence, process-restart recovery, general autonomous Coordinator, Builder, and Reviewer agents, Python and static projects, multi-project support, automatic Git commits, remote Git mutation, cloud execution, deployment, authentication, teams, billing, marketplace features, and ForgeOS Browser.
 
@@ -65,6 +65,7 @@ No substantive code should be merged without Qodo review evidence.
 - [Phase 1 mission contracts, state machine, and security boundaries](https://github.com/Eddienews/forgeos-lite-trueforge/pull/2): the initial Qodo review found four valid continuity issues. Follow-up work binds approval to the target project and base revision, rejects cross-mission evidence, preserves candidate identity from review through application, and binds completion evidence to the applied candidate hash. An additional automated review identified that the verdict digest also needed to be recomputed from canonical test evidence; that binding and its regression coverage were added. Qodo's latest review was clean and all review threads were resolved before the human-approved merge.
 - [Phase 2 TrueForge session adapter and isolated execution foundation](https://github.com/Eddienews/forgeos-lite-trueforge/pull/3): the final head passed CI and Qodo review before the human-approved merge.
 - [Phase 3 candidate patch generation and approval-required MCP gate](https://github.com/Eddienews/forgeos-lite-trueforge/pull/4): four Qodo security and correctness findings and two additional automated findings were corrected with regression coverage. The final head had a clean Qodo report, successful CI, and zero unresolved review threads before the human-approved merge.
+- [Phase 4 mission orchestration vertical slice](https://github.com/Eddienews/forgeos-lite-trueforge/pull/5): the initial Qodo review identified six valid correctness, security, and reliability findings. Follow-up work prevents validation-time candidate or workspace mutation, binds exact validation evidence to the mission and Builder workspace, enforces mission authority and Builder transformation proof at the Reviewer boundary, and bounds every fingerprinted filesystem entry. Each correction has Phase 4 regression coverage; the final head remains subject to clean follow-up review before human merge approval.
 
 ## License and marks
 

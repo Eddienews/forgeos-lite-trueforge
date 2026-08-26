@@ -176,6 +176,8 @@ Phase 1 implements only in-memory journal construction, verification, and replay
 - Intake supports one local Node.js Git project and one active mission at a time.
 - The only Builder transformation pattern is an argument-free declared `npm-run-build` policy in a fresh clone. General autonomous editing, Python, static projects, and policy arguments remain deferred.
 - The orchestrator fingerprints isolated Git metadata and every file or symlink in the TrueForge workspace outside the clone around Builder work. Empty provider-created runtime directories are normalized out of that comparison, while any outside file content or symlink still fails closed. TrueForge's sandbox remains the operating-system confinement boundary during command execution.
+- Candidate content is hashed immediately after Builder completion and recomputed after every declared validation policy. Validation must preserve that exact candidate, isolated Git metadata, and the outside-workspace fingerprint before Reviewer evaluation begins.
+- Reviewer validation requires the exact declared policy inventory, one successful runtime record per policy, mission and Builder-workspace binding, unique execution identities, and no reuse of Builder execution evidence. Builder proof must identify exactly the declared transformation policies with one evidence identity per policy.
 - The fixed Reviewer evaluates deterministic public evidence and does not run an open-ended model review.
 - Mission summaries and pending application contexts are in memory and do not survive process restart.
 - Phase 4 stops before human approval. Phase 3 remains the only application path.
