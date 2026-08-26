@@ -1,0 +1,18 @@
+{
+  "name": "forgeos-lite-trueforge",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A controlled local project harness built around TrueForge for the Agent Harness Hackathon.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "format:check": "node scripts/check-format.mjs",
+    "test:unit": "node --test",
+    "test:language": "node scripts/check-language.mjs",
+    "test": "npm run format:check && npm run test:unit && npm run test:language"
+  },
+  "engines": {
+    "node": ">=22 <23"
+  }
+}
+
