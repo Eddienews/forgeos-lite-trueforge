@@ -15,6 +15,20 @@ const ZERO_HASH = "0".repeat(64);
 const stateSet = new Set(MISSION_STATES);
 const actorSet = new Set(["human", "system", "coordinator", "builder", "reviewer"]);
 const terminalStates = new Set(["completed", "cancelled"]);
+const milestoneSet = new Set([
+  "plan.ready",
+  "builder.workspace_ready",
+  "builder.started",
+  "builder.completed",
+  "builder.failed",
+  "validation.started",
+  "validation.completed",
+  "validation.failed",
+  "reviewer.started",
+  "reviewer.approved",
+  "reviewer.rejected",
+  "candidate.ready"
+]);
 
 export const MISSION_TRANSITIONS = Object.freeze({
   draft: Object.freeze(["planned", "blocked", "cancelled"]),
@@ -243,7 +257,7 @@ function validateEventInput(input) {
   );
   assertIdentifier(input.eventId, "MissionEvent.eventId");
   assertIdentifier(input.missionId, "MissionEvent.missionId");
-  if (!new Set(["mission.created", "mission.transitioned"]).has(input.eventType)) {
+  if (!new Set(["mission.created", "mission.transitioned", "mission.milestone"]).has(input.eventType)) {
     fail(`Unknown mission event type: ${input.eventType}.`);
   }
   if (!actorSet.has(input.actor)) {
@@ -257,13 +271,44 @@ function validateEventInput(input) {
     if (input.payload.state !== "draft") {
       fail("A mission journal must begin in draft state.");
     }
-  } else {
+  } else if (input.eventType === "mission.transitioned") {
     validateTransitionPayload(
       input.payload.fromState,
       input.payload,
       { missionId: input.missionId },
       false
     );
+  } else {
+    assertExactKeys(
+      input.payload,
+      ["milestone", "summary"],
+      ["evidenceIds", "artifactSha256"],
+      "mission.milestone payload"
+    );
+    if (!milestoneSet.has(input.payload.milestone)) {
+      fail(`Unknown mission milestone: ${String(input.payload.milestone)}.`);
+    }
+    if (
+      typeof input.payload.summary !== "string" ||
+      input.payload.summary.length === 0 ||
+      input.payload.summary.length > 4096
+    ) {
+      fail("mission.milestone payload.summary must be bounded public text.");
+    }
+    if (Object.hasOwn(input.payload, "evidenceIds")) {
+      if (!Array.isArray(input.payload.evidenceIds) || input.payload.evidenceIds.length > 100) {
+        fail("mission.milestone payload.evidenceIds must contain at most 100 identifiers.");
+      }
+      input.payload.evidenceIds.forEach((entry, index) =>
+        assertIdentifier(entry, `mission.milestone payload.evidenceIds[${index}]`)
+      );
+      if (new Set(input.payload.evidenceIds).size !== input.payload.evidenceIds.length) {
+        fail("mission.milestone payload.evidenceIds must not contain duplicates.");
+      }
+    }
+    if (Object.hasOwn(input.payload, "artifactSha256")) {
+      assertSha256(input.payload.artifactSha256, "mission.milestone payload.artifactSha256");
+    }
   }
 }
 
@@ -377,6 +422,9 @@ export function replayMissionJournal(events, options = {}) {
   let pendingCandidateBinding = null;
   let applyingCandidate = null;
   for (const event of events.slice(1)) {
+    if (event.eventType === "mission.milestone") {
+      continue;
+    }
     if (event.eventType !== "mission.transitioned") {
       fail(`Unexpected event after mission creation: ${event.eventType}.`);
     }

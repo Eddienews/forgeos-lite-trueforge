@@ -60,7 +60,20 @@ Branch: `feat/candidate-patch-approval-gate`
 
 Phase 3 intentionally keeps approval consumption in memory and does not claim restart recovery. Full Coordinator, Builder, and Reviewer runtimes, durable storage, the backend, the interface, automated commits, remote Git mutation, cloud, deployment, teams, billing, marketplace work, and ForgeOS Browser remain deferred.
 
-### PR 4: Mission Control, example, and submission evidence
+### PR 4: Mission orchestration vertical slice
+
+Branch: `feat/mission-orchestration-vertical-slice`
+
+- Canonical clean local Git project intake and existing Mission construction.
+- Fixed structured Coordinator plan with exact authority and declared policy selection.
+- Fresh Builder clone inside a real TrueForge session workspace.
+- Declared build transformation plus build and test validation.
+- Fixed evidence-only Reviewer, existing candidate generation, and replayed timeline.
+- Positive mission arrival at `awaiting_approval` and negative validation-failure proof.
+
+Phase 4 stops at the Phase 3 human gate. It does not add an interface, backend, database, durable recovery, general autonomous agents, new runtimes, commits, pushes, or deployment.
+
+### PR 5: Mission Control, example, and submission evidence
 
 Branch: `feat/mission-control-demo`
 
