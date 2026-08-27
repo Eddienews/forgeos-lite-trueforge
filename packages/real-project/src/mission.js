@@ -278,6 +278,32 @@ async function changedFiles(root) {
   return [...new Set([...changed, ...untracked])].sort((left, right) => left.localeCompare(right));
 }
 
+async function trackedBaselineFile(root, relativePath) {
+  const output = await gitText(root, ["ls-tree", "-z", "HEAD", "--", relativePath]);
+  if (output === "") return false;
+  const entry = output.replace(/\0$/u, "");
+  const separator = entry.indexOf("\t");
+  if (separator === -1 || entry.slice(separator + 1) !== relativePath) return false;
+  const [mode, type] = entry.slice(0, separator).split(" ");
+  return mode === "100644" && type === "blob";
+}
+
+export async function authoritativeChangedFileSize(builderRoot, relativePath) {
+  let details;
+  try {
+    details = await lstat(path.join(builderRoot, ...relativePath.split("/")));
+  } catch (error) {
+    if (error?.code === "ENOENT" && (await trackedBaselineFile(builderRoot, relativePath))) {
+      return 0;
+    }
+    throw error;
+  }
+  if (!details.isFile() || details.isSymbolicLink() || (details.mode & 0o111) !== 0) {
+    fail(`Builder produced an unsafe file entry: ${relativePath}.`);
+  }
+  return details.size;
+}
+
 async function treeInventory(
   root,
   excludedTopLevel = new Set(),
@@ -339,11 +365,7 @@ async function assertAuthoritativeWorkspace(options) {
   let totalBytes = 0;
   for (const relativePath of actual) {
     if (!relativePath.startsWith("public/")) fail(`Builder changed a forbidden path: ${relativePath}.`);
-    const details = await lstat(path.join(options.builderRoot, ...relativePath.split("/")));
-    if (!details.isFile() || details.isSymbolicLink() || (details.mode & 0o111) !== 0) {
-      fail(`Builder produced an unsafe file entry: ${relativePath}.`);
-    }
-    totalBytes += details.size;
+    totalBytes += await authoritativeChangedFileSize(options.builderRoot, relativePath);
   }
   if (totalBytes > maximumCandidateBytes) fail("Builder exceeded the candidate-size limit.");
   if (!hashesEqual(options.gitFingerprint, await fingerprintTree(path.join(options.builderRoot, ".git")))) {

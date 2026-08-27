@@ -54,6 +54,23 @@ function durationMs(evidence) {
   return Date.parse(evidence.completedAt) - Date.parse(evidence.startedAt);
 }
 
+export function validationFailureUpdate(iteration, originalUnchanged) {
+  return Object.freeze({
+    type: "mission_failed",
+    value: Object.freeze({
+      failure: Object.freeze({
+        code: "validation_failed",
+        stage: "validation",
+        summary: "Fixed build or test validation failed after the bounded Builder repair limit."
+      }),
+      validationSummary: Object.freeze(
+        iteration.validationSummary.map((entry) => Object.freeze({ ...entry }))
+      ),
+      originalUnchanged
+    })
+  });
+}
+
 function publicPlan(plan) {
   return {
     objective: plan.objective,
@@ -105,6 +122,7 @@ export async function runRealProjectDemo(options) {
   let primaryError = null;
   let cleanupFailures = [];
   let retainProject = options.retainPreview === true;
+  let latestBuilderIteration = null;
   const result = {
     kind: spec.kind,
     mission: spec.mission,
@@ -180,6 +198,16 @@ export async function runRealProjectDemo(options) {
       mission: spec.mission,
       plan,
       onIteration: async (iteration) => {
+        latestBuilderIteration = {
+          passed: iteration.passed,
+          validationSummary: iteration.validationEvidence.map((entry) => ({
+            policyId: entry.command.policyId,
+            success:
+              entry.exitStatus === 0 && entry.runtimeError === null && entry.timedOut === false,
+            startedAt: entry.startedAt,
+            completedAt: entry.completedAt
+          }))
+        };
         if (!iteration.passed) {
           console.log(stage(iteration.repair ? "BUILDER REPAIR REQUIRED" : "VALIDATION REQUIRES REPAIR"));
           for (const entry of iteration.validationEvidence.filter(
@@ -401,6 +429,27 @@ export async function runRealProjectDemo(options) {
     }
   } catch (error) {
     primaryError = error;
+    if (
+      latestBuilderIteration?.passed === false &&
+      error instanceof Error &&
+      error.message.startsWith("Validation failed after the hard limit")
+    ) {
+      let originalUnchanged = false;
+      try {
+        const status = await git(
+          fixture.projectRoot,
+          "status",
+          "--porcelain=v1",
+          "--untracked-files=all"
+        );
+        const head = await git(fixture.projectRoot, "rev-parse", "HEAD");
+        originalUnchanged = status.stdout === "" && head.stdout.trim() === fixture.baseRevision;
+      } catch {
+        // Failure presentation cannot replace the primary mission error.
+      }
+      const failureUpdate = validationFailureUpdate(latestBuilderIteration, originalUnchanged);
+      await publishUpdate(options, failureUpdate.type, failureUpdate.value);
+    }
   } finally {
     cleanupFailures = await runCleanupSteps([
       ["TrueForge approval session", async () => {
@@ -438,13 +487,42 @@ export async function runRealProjectDemo(options) {
       durationMs: result.durationMs
     });
   }
+  const releaseRetainedResources = async () => {
+    const failures = await runCleanupSteps([
+      ["candidate preview", async () => prepared?.closePreview()],
+      ["disposable project", async () => rm(fixture.temporaryRoot, { recursive: true, force: true })]
+    ]);
+    if (failures.length > 0) {
+      throw new Error(`Retained resource cleanup failed: ${failures.join("; ")}`);
+    }
+    retainProject = false;
+  };
   if (primaryError !== null) {
-    await prepared?.closePreview().catch(() => undefined);
-    await rm(fixture.temporaryRoot, { recursive: true, force: true }).catch(() => undefined);
+    try {
+      await releaseRetainedResources();
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [primaryError, cleanupError],
+        "Real-project proof failed and retained resources could not be removed."
+      );
+    }
     throw primaryError;
   }
   if (cleanupFailures.length > 0) {
-    throw new Error(`Real-project proof cleanup failed: ${cleanupFailures.join("; ")}`);
+    let retainedFailure = null;
+    try {
+      await releaseRetainedResources();
+    } catch (error) {
+      retainedFailure = error;
+    }
+    const cleanupError = new Error(`Real-project proof cleanup failed: ${cleanupFailures.join("; ")}`);
+    if (retainedFailure !== null) {
+      throw new AggregateError(
+        [cleanupError, retainedFailure],
+        "Real-project proof cleanup and retained-resource cleanup failed."
+      );
+    }
+    throw cleanupError;
   }
   console.log(stage("CLEAN SHUTDOWN"));
   console.log("Builder session, MCP tools, approval service, and TrueForge runtime closed.");
@@ -453,12 +531,6 @@ export async function runRealProjectDemo(options) {
     console.log(`Disposable project retained: ${fixture.projectRoot}`);
   }
   if (options.json) console.log(JSON.stringify(result, null, 2));
-  const retainedCleanup = options.retainPreview
-    ? async () => {
-        await prepared?.closePreview();
-        await rm(fixture.temporaryRoot, { recursive: true, force: true });
-        retainProject = false;
-      }
-    : undefined;
+  const retainedCleanup = options.retainPreview ? releaseRetainedResources : undefined;
   return Object.freeze({ ...result, retainedCleanup });
 }

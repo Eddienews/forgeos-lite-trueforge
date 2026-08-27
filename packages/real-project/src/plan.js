@@ -32,7 +32,7 @@ export function validateBoundedCoordinatorPlan(value, context) {
     if (!Array.isArray(value[field]) || value[field].length === 0 || value[field].length > 32) {
       fail(`Bounded Coordinator plan ${field} must be a bounded non-empty array.`);
     }
-    if (value[field].some((entry) => typeof entry !== "string" || entry.length === 0 || entry.length > 2000)) {
+    if (value[field].some((entry) => typeof entry !== "string" || entry.length === 0 || entry.length > 10_000)) {
       fail(`Bounded Coordinator plan ${field} must contain bounded text.`);
     }
   }

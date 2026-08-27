@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { DEMO_MISSION_TEXT } from "../../packages/cli/src/demo.js";
+import { validationFailureUpdate } from "../../packages/cli/src/real-project-demo.js";
 import {
   applyWorkflowUpdate,
   createControlServer
@@ -142,6 +143,50 @@ test("result view model keeps outcome primary and technical identity secondary",
   assert.match(gated.safety.message, /Nothing irreversible happens until you decide/u);
 });
 
+test("bounded Builder validation exhaustion publishes a validation-specific failure", () => {
+  const update = validationFailureUpdate(
+    {
+      validationSummary: [
+        {
+          policyId: "npm-test",
+          success: false,
+          startedAt: "2026-01-01T00:00:00.000Z",
+          completedAt: "2026-01-01T00:00:01.000Z"
+        }
+      ]
+    },
+    true
+  );
+  const failed = applyWorkflowUpdate(
+    {
+      revision: 1,
+      status: "running",
+      headerStatus: "Running",
+      project: { name: "greeting-project", branch: "main", clean: true, type: "Node.js" },
+      mission: { suggested: DEMO_MISSION_TEXT, submitted: DEMO_MISSION_TEXT },
+      stages: [],
+      latestOutcome: null,
+      safety: { state: "unchanged", message: "Original unchanged." },
+      plan: null,
+      validation: [],
+      reviewer: null,
+      result: null,
+      changes: [],
+      approval: { state: "unavailable", canApply: false, canReject: false },
+      application: null,
+      timeline: [],
+      evidence: {},
+      failure: null,
+      cleanup: null,
+      tabsAvailable: false
+    },
+    update
+  );
+  assert.equal(failed.status, "validation_failed");
+  assert.equal(failed.validation[0].policyId, "npm-test");
+  assert.equal(failed.safety.message, "Your original project remains unchanged.");
+});
+
 test("local control server requires its token and routes allow and deny through the decision provider", async () => {
   const decisions = [];
   const runner = async ({ onUpdate, decisionProvider }) => {
@@ -247,4 +292,44 @@ test("control server refuses non-loopback binding", () => {
     () => createControlServer({ host: "0.0.0.0", port: 4173 }),
     /must bind to 127\.0\.0\.1/u
   );
+});
+
+test("control retains cleanup authority until cleanup succeeds", async () => {
+  let cleanupAttempts = 0;
+  const runner = async ({ onUpdate }) => {
+    await onUpdate({
+      type: "mission_failed",
+      value: {
+        failure: { code: "blocked", stage: "runtime", summary: "Controlled test failure." },
+        validationSummary: [],
+        originalUnchanged: true
+      }
+    });
+    return {
+      retainedCleanup: async () => {
+        cleanupAttempts += 1;
+        if (cleanupAttempts === 1) throw new Error("Transient cleanup failure.");
+      }
+    };
+  };
+  const control = createControlServer({
+    port: 0,
+    runner,
+    controlToken: "cleanup-retry-token"
+  });
+  const url = await control.listen();
+  try {
+    const started = await post(url, "/api/missions", "cleanup-retry-token", {
+      mission: DEMO_MISSION_TEXT
+    });
+    assert.equal(started.status, 202);
+    await waitForState(url, (value) => value.status === "runtime_failed");
+    const firstReset = await post(url, "/api/reset", "cleanup-retry-token", {});
+    assert.equal(firstReset.status, 500);
+    const secondReset = await post(url, "/api/reset", "cleanup-retry-token", {});
+    assert.equal(secondReset.status, 200);
+    assert.equal(cleanupAttempts, 2);
+  } finally {
+    await control.close();
+  }
 });

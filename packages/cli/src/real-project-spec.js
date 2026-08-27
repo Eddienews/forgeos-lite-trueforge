@@ -4,6 +4,25 @@ function code(bytes = 3) {
   return randomBytes(bytes).toString("hex").toUpperCase();
 }
 
+function acceptanceContract(checks) {
+  const frozenChecks = checks.map((entry) => Object.freeze({ ...entry }));
+  const criteria = frozenChecks.map((check) => {
+    if (check.kind === "visible-text") return `Display exact visible text: ${check.value}`;
+    if (check.kind === "control") return `Provide local ${check.value} behavior.`;
+    if (check.kind === "source-policy" && check.value === "responsive") {
+      return "Use responsive CSS.";
+    }
+    if (check.kind === "source-policy" && check.value === "local-only") {
+      return "Use no external HTTP resources.";
+    }
+    throw new Error("Unsupported static web acceptance check.");
+  });
+  return Object.freeze({
+    acceptanceChecks: Object.freeze(frozenChecks),
+    acceptanceCriteria: Object.freeze(criteria)
+  });
+}
+
 export function createOperationsDashboardSpec() {
   const runId = `OPS-${code(3)}`;
   const company = `Northstar Systems ${code(2)}`;
@@ -22,6 +41,16 @@ export function createOperationsDashboardSpec() {
     `Include a recent incident timeline containing "${incident}" and a control that filters operational and degraded services.`,
     `Use run identifier ${runId}, make it responsive, use only local plain HTML, CSS, and JavaScript, and keep all required checks passing.`
   ].join(" ");
+  const requiredText = [...new Set([company, runId, ...services, degradedService, incident])];
+  const acceptance = acceptanceContract([
+    ...requiredText.map((value) => ({ kind: "visible-text", value })),
+    { kind: "visible-text", value: "Operational" },
+    { kind: "visible-text", value: "Degraded" },
+    { kind: "visible-text", value: "System health" },
+    { kind: "control", value: "filter" },
+    { kind: "source-policy", value: "responsive" },
+    { kind: "source-policy", value: "local-only" }
+  ]);
   return Object.freeze({
     kind: "operations-dashboard",
     mission,
@@ -31,15 +60,9 @@ export function createOperationsDashboardSpec() {
       runId,
       displayName: company,
       mission,
-      requiredText: Object.freeze([company, runId, ...services, degradedService, incident]),
+      requiredText: Object.freeze(requiredText),
       requiredControls: Object.freeze(["filter"]),
-      acceptanceCriteria: Object.freeze([
-        "Present overall system health and all four runtime-specific services.",
-        "Represent the exact degraded service and incident supplied for this run.",
-        "Provide a working local filter for operational and degraded services.",
-        "Use responsive plain HTML, CSS, and JavaScript without external resources.",
-        "Keep immutable build and acceptance policies passing."
-      ])
+      ...acceptance
     }),
     uniqueValues: Object.freeze({ company, runId, services: Object.freeze(services), degradedService, incident })
   });
@@ -56,6 +79,14 @@ export function createReadingListSpec() {
     `Add a local search field, a reading-progress summary, responsive styling, and keep all required checks passing.`,
     `Use run identifier ${runId} and only local plain HTML, CSS, and JavaScript.`
   ].join(" ");
+  const requiredText = [displayName, runId, ...categories, featuredTitle];
+  const acceptance = acceptanceContract([
+    ...requiredText.map((value) => ({ kind: "visible-text", value })),
+    { kind: "visible-text", value: "Reading progress" },
+    { kind: "control", value: "search" },
+    { kind: "source-policy", value: "responsive" },
+    { kind: "source-policy", value: "local-only" }
+  ]);
   return Object.freeze({
     kind: "reading-list",
     mission,
@@ -65,15 +96,9 @@ export function createReadingListSpec() {
       runId,
       displayName,
       mission,
-      requiredText: Object.freeze([displayName, runId, ...categories, featuredTitle]),
+      requiredText: Object.freeze(requiredText),
       requiredControls: Object.freeze(["search"]),
-      acceptanceCriteria: Object.freeze([
-        "Present all three runtime-specific reading categories.",
-        "Include the exact featured title and a reading-progress summary.",
-        "Provide working local search behavior.",
-        "Use responsive plain HTML, CSS, and JavaScript without external resources.",
-        "Keep immutable build and acceptance policies passing."
-      ])
+      ...acceptance
     }),
     uniqueValues: Object.freeze({ displayName, runId, categories: Object.freeze(categories), featuredTitle })
   });
@@ -92,6 +117,14 @@ export function createCustomStaticWebSpec(mission) {
   ];
   const requiredControls = controls.length === 0 ? ["filter"] : [...new Set(controls)];
   const boundedMission = `${normalized} Include visible project identifier ${runId} and title ${displayName}. Use only local plain HTML, CSS, and JavaScript, make it responsive, and keep all required checks passing.`;
+  const acceptance = acceptanceContract([
+    { kind: "visible-text", value: normalized },
+    { kind: "visible-text", value: displayName },
+    { kind: "visible-text", value: runId },
+    ...requiredControls.map((value) => ({ kind: "control", value })),
+    { kind: "source-policy", value: "responsive" },
+    { kind: "source-policy", value: "local-only" }
+  ]);
   return Object.freeze({
     kind: "custom-static-web",
     mission: boundedMission,
@@ -103,13 +136,7 @@ export function createCustomStaticWebSpec(mission) {
       mission: boundedMission,
       requiredText: Object.freeze([displayName, runId]),
       requiredControls: Object.freeze(requiredControls),
-      acceptanceCriteria: Object.freeze([
-        "Materialize the current natural-language mission as a working static application.",
-        "Display the current runtime-specific project title and identifier.",
-        "Provide the requested bounded local interaction.",
-        "Use responsive plain HTML, CSS, and JavaScript without external resources.",
-        "Keep immutable build and acceptance policies passing."
-      ])
+      ...acceptance
     }),
     uniqueValues: Object.freeze({ displayName, runId })
   });

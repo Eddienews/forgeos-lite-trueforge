@@ -95,3 +95,9 @@ ForgeOS Control was inspected locally at `http://127.0.0.1:4173/`. Home, Running
 ### Current repository verification
 
 After alignment and documentation reconciliation, `npm run verify` passed with 179 tests, formatting across 73 files, the English-only gate across 73 files, the lightweight secret check across 72 owned text files, and `npm audit --audit-level=low` reporting zero vulnerabilities. `git diff --check` also passed.
+
+## Pull request 7 review corrections
+
+Qodo's initial review of implementation commit `dc7c19c` reported seven valid findings. The follow-up implementation binds every declared acceptance criterion to an executable immutable check, preserves and retries retained cleanup authority, rolls back partial fixture and preview allocation, distinguishes exhausted validation from runtime failure, and admits deletion only for a tracked non-executable baseline file. Focused regressions cover the executable contract, generated acceptance test, fixture rollback, preview rollback, cleanup retry, validation-failure presentation, and tracked deletion.
+
+After these corrections, `npm run verify` passed with 186 tests, formatting across 73 files, the English-only gate across 73 files, the lightweight secret check across 72 owned text files, and `npm audit --audit-level=low` reporting zero vulnerabilities. The final-head live proof, CI result, Qodo follow-up, and unresolved-thread count remain pull-request gates rather than claims made by this committed document.

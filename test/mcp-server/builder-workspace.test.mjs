@@ -15,7 +15,14 @@ function requirements() {
     mission: "Build a bounded static application.",
     requiredText: ["Boundary Fixture"],
     requiredControls: ["filter"],
-    acceptanceCriteria: ["Stay inside public/."]
+    acceptanceChecks: [
+      { kind: "visible-text", value: "Boundary Fixture" },
+      { kind: "control", value: "filter" }
+    ],
+    acceptanceCriteria: [
+      "Display exact visible text: Boundary Fixture",
+      "Provide local filter behavior."
+    ]
   };
 }
 

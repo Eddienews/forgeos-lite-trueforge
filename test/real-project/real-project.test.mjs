@@ -1,6 +1,17 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { chmod, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  stat,
+  unlink,
+  writeFile
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -20,6 +31,7 @@ import {
   startCandidatePreviewServer,
   validateBoundedCoordinatorPlan
 } from "@forgeos-lite/real-project";
+import { authoritativeChangedFileSize } from "../../packages/real-project/src/mission.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -32,7 +44,18 @@ function requirements(runId = "REAL-ONE") {
     mission,
     requiredText: [`Status ${runId}`, runId],
     requiredControls: ["filter"],
-    acceptanceCriteria: ["Show the current status."]
+    acceptanceChecks: [
+      { kind: "visible-text", value: `Status ${runId}` },
+      { kind: "control", value: "filter" },
+      { kind: "source-policy", value: "responsive" },
+      { kind: "source-policy", value: "local-only" }
+    ],
+    acceptanceCriteria: [
+      `Display exact visible text: Status ${runId}`,
+      "Provide local filter behavior.",
+      "Use responsive CSS.",
+      "Use no external HTTP resources."
+    ]
   };
 }
 
@@ -47,6 +70,76 @@ test("static fixtures are fresh Git projects bound to current immutable requirem
     assert.match(await readFile(path.join(first.projectRoot, "requirements.json"), "utf8"), /REAL-A/u);
     assert.doesNotMatch(await readFile(path.join(second.projectRoot, "requirements.json"), "utf8"), /REAL-A/u);
   } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("static fixture criteria map exactly to executable acceptance checks", async () => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "forgeos-real-contract-"));
+  try {
+    const invalid = requirements("REAL-CONTRACT");
+    invalid.acceptanceCriteria = [...invalid.acceptanceCriteria];
+    invalid.acceptanceCriteria[0] = "A prose-only criterion.";
+    await assert.rejects(
+      createStaticWebProject({ temporaryRoot, requirements: invalid }),
+      /map exactly to executable acceptanceChecks/u
+    );
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("immutable acceptance checks execute against visible content and local behavior", async () => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "forgeos-real-acceptance-"));
+  try {
+    const project = await createStaticWebProject({
+      temporaryRoot,
+      requirements: requirements("REAL-ACCEPT")
+    });
+    await writeFile(
+      path.join(project.projectRoot, "public", "index.html"),
+      "<!doctype html><link rel=\"stylesheet\" href=\"app.css\"><h1>Status REAL-ACCEPT</h1><button data-filter=\"status\">Filter</button><script src=\"app.js\"></script>\n",
+      "utf8"
+    );
+    await writeFile(
+      path.join(project.projectRoot, "public", "app.css"),
+      "body { color: black; }\n@media (max-width: 600px) { body { color: gray; } }\n",
+      "utf8"
+    );
+    await writeFile(
+      path.join(project.projectRoot, "public", "app.js"),
+      "document.querySelector('[data-filter]').addEventListener('click', () => undefined);\n",
+      "utf8"
+    );
+    await execFileAsync(
+      process.execPath,
+      ["--test", "test/acceptance.test.mjs"],
+      { cwd: project.projectRoot }
+    );
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("fixture setup removes its allocated project when Git initialization fails", async () => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "forgeos-real-rollback-"));
+  const fakeBin = path.join(temporaryRoot, "fake-bin");
+  await mkdir(fakeBin);
+  const fakeGit = path.join(fakeBin, "git");
+  await writeFile(fakeGit, "#!/bin/sh\nexit 1\n", "utf8");
+  await chmod(fakeGit, 0o755);
+  const originalPath = process.env.PATH;
+  try {
+    process.env.PATH = fakeBin;
+    await assert.rejects(
+      createStaticWebProject({ temporaryRoot, requirements: requirements("REAL-ROLLBACK") })
+    );
+    assert.deepEqual(
+      (await readdir(temporaryRoot)).filter((entry) => entry.startsWith("real-project-")),
+      []
+    );
+  } finally {
+    process.env.PATH = originalPath;
     await rm(temporaryRoot, { recursive: true, force: true });
   }
 });
@@ -141,8 +234,47 @@ async function previewFixture() {
     reviewerVerdict,
     createdAt: "2026-08-26T00:00:00.000Z"
   });
-  return { temporaryRoot, project, artifact, candidate };
+  return { temporaryRoot, project, builderRoot, artifact, candidate };
 }
+
+test("authoritative workspace accounting accepts tracked regular-file deletion", async () => {
+  const value = await previewFixture();
+  try {
+    await unlink(path.join(value.builderRoot, "public", "index.html"));
+    assert.equal(
+      await authoritativeChangedFileSize(value.builderRoot, "public/index.html"),
+      0
+    );
+  } finally {
+    await rm(value.temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("candidate preview removes its container when source copying fails", async () => {
+  const value = await previewFixture();
+  const source = path.join(value.project.projectRoot, "public", "index.html");
+  try {
+    const before = (await readdir(value.temporaryRoot)).filter((entry) =>
+      entry.startsWith("candidate-preview-")
+    );
+    await chmod(source, 0o000);
+    await assert.rejects(
+      materializeCandidatePreview({
+        artifact: value.artifact,
+        candidate: value.candidate,
+        originalRoot: value.project.projectRoot,
+        temporaryRoot: await realpath(value.temporaryRoot)
+      })
+    );
+    const after = (await readdir(value.temporaryRoot)).filter((entry) =>
+      entry.startsWith("candidate-preview-")
+    );
+    assert.deepEqual(after, before);
+  } finally {
+    await chmod(source, 0o644).catch(() => undefined);
+    await rm(value.temporaryRoot, { recursive: true, force: true });
+  }
+});
 
 test("sealed CandidatePatch preview is read-only and serves only GET or HEAD with restrictive CSP", async () => {
   const value = await previewFixture();

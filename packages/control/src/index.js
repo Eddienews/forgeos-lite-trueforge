@@ -378,6 +378,13 @@ export function createControlServer(options = {}) {
     return request.headers["x-forgeos-control-token"] === controlToken;
   }
 
+  async function releaseRetainedCleanup() {
+    if (retainedCleanup === null) return;
+    const cleanup = retainedCleanup;
+    await cleanup();
+    if (retainedCleanup === cleanup) retainedCleanup = null;
+  }
+
   async function startMission(request, response) {
     if (!authorized(request)) {
       sendJson(response, 403, { error: "Local control authorization failed." });
@@ -492,11 +499,7 @@ export function createControlServer(options = {}) {
       sendJson(response, 409, { error: "The active mission cannot be reset yet." });
       return;
     }
-    if (retainedCleanup !== null) {
-      const cleanup = retainedCleanup;
-      retainedCleanup = null;
-      await cleanup();
-    }
+    await releaseRetainedCleanup();
     missionSpec =
       options.runner === undefined ? createOperationsDashboardSpec() : { mission: DEMO_MISSION_TEXT };
     state = { ...initialState(missionSpec), revision: state.revision + 1 };
@@ -558,11 +561,7 @@ export function createControlServer(options = {}) {
         }
         await activeRun;
       }
-      if (retainedCleanup !== null) {
-        const cleanup = retainedCleanup;
-        retainedCleanup = null;
-        await cleanup();
-      }
+      await releaseRetainedCleanup();
       if (!server.listening) return;
       await new Promise((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve()))

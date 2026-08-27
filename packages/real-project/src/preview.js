@@ -213,8 +213,8 @@ export async function materializeCandidatePreview(options) {
   }
   const container = await mkdtemp(path.join(temporaryRoot, "candidate-preview-"));
   const siteRoot = path.join(container, "site");
-  await copyTextTree(path.join(originalRoot, "public"), siteRoot);
   try {
+    await copyTextTree(path.join(originalRoot, "public"), siteRoot);
     for (const operation of options.artifact.operations) {
       if (!operation.path.startsWith("public/")) fail("Preview artifact escapes public/.");
       const relativePath = operation.path.slice("public/".length);
@@ -257,9 +257,9 @@ export async function materializeCandidatePreview(options) {
     candidateSha256: options.candidate.patchSha256,
     async close() {
       if (closed) return;
-      closed = true;
       await makeRemovable(container);
       await rm(container, { recursive: true, force: true });
+      closed = true;
     }
   });
 }

@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
@@ -11,16 +11,60 @@ function fail(message) {
   throw new TypeError(message);
 }
 
-function canonicalStrings(value, label, maximumItems = 100) {
+function canonicalStrings(value, label, maximumItems = 100, maximumLength = 1000) {
   if (!Array.isArray(value) || value.length === 0 || value.length > maximumItems) {
     fail(`${label} must be a non-empty bounded array.`);
   }
   for (const entry of value) {
-    if (typeof entry !== "string" || entry.length === 0 || entry.length > 1000 || entry.includes("\0")) {
+    if (
+      typeof entry !== "string" ||
+      entry.length === 0 ||
+      entry.length > maximumLength ||
+      entry.includes("\0")
+    ) {
       fail(`${label} must contain bounded strings.`);
     }
   }
   return [...new Set(value)];
+}
+
+function acceptanceDescription(check) {
+  if (check.kind === "visible-text") return `Display exact visible text: ${check.value}`;
+  if (check.kind === "control") return `Provide local ${check.value} behavior.`;
+  if (check.kind === "source-policy" && check.value === "responsive") {
+    return "Use responsive CSS.";
+  }
+  if (check.kind === "source-policy" && check.value === "local-only") {
+    return "Use no external HTTP resources.";
+  }
+  fail("Static web acceptanceChecks contain an unsupported check.");
+}
+
+function canonicalAcceptanceChecks(value) {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 100) {
+    fail("Static web acceptanceChecks must be a non-empty bounded array.");
+  }
+  const checks = value.map((entry) => {
+    if (
+      entry === null ||
+      typeof entry !== "object" ||
+      Array.isArray(entry) ||
+      Object.keys(entry).sort().join("\0") !== ["kind", "value"].sort().join("\0") ||
+      typeof entry.kind !== "string" ||
+      typeof entry.value !== "string" ||
+      entry.value.length === 0 ||
+      entry.value.length > 6000 ||
+      entry.value.includes("\0")
+    ) {
+      fail("Static web acceptanceChecks must contain bounded kind/value objects.");
+    }
+    acceptanceDescription(entry);
+    return Object.freeze({ kind: entry.kind, value: entry.value });
+  });
+  if (new Set(checks.map((entry) => `${entry.kind}\0${entry.value}`)).size !== checks.length) {
+    fail("Static web acceptanceChecks must be unique.");
+  }
+  return checks;
 }
 
 export function validateStaticWebRequirements(value) {
@@ -31,6 +75,7 @@ export function validateStaticWebRequirements(value) {
     "mission",
     "requiredText",
     "requiredControls",
+    "acceptanceChecks",
     "acceptanceCriteria"
   ];
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -56,15 +101,21 @@ export function validateStaticWebRequirements(value) {
   if (requiredControls.some((entry) => !["filter", "search"].includes(entry))) {
     fail("Static web requirements contain an unsupported interaction contract.");
   }
+  const acceptanceChecks = canonicalAcceptanceChecks(value.acceptanceChecks);
   const acceptanceCriteria = canonicalStrings(
     value.acceptanceCriteria,
     "Static web acceptanceCriteria",
-    50
+    50,
+    10_000
   );
+  if (acceptanceCriteria.join("\0") !== acceptanceChecks.map(acceptanceDescription).join("\0")) {
+    fail("Static web acceptanceCriteria must map exactly to executable acceptanceChecks.");
+  }
   return Object.freeze({
     ...value,
     requiredText: Object.freeze(requiredText),
     requiredControls: Object.freeze(requiredControls),
+    acceptanceChecks: Object.freeze(acceptanceChecks),
     acceptanceCriteria: Object.freeze(acceptanceCriteria)
   });
 }
@@ -92,6 +143,24 @@ const requirements = JSON.parse(await readFile("requirements.json", "utf8"));
 const immutableManifest = JSON.parse(await readFile("immutable-manifest.json", "utf8"));
 const requiredFiles = ["public/index.html", "public/app.css", "public/app.js"];
 
+function visibleText(value) {
+  return value
+    .replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/giu, " ")
+    .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/giu, " ")
+    .replace(/<[^>]+>/gu, " ")
+    .replaceAll("&amp;", "&")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&quot;", "\\\"")
+    .replaceAll("&#39;", "'")
+    .replaceAll(/\\s+/gu, " ")
+    .trim();
+}
+
+function normalizedText(value) {
+  return value.replaceAll(/\\s+/gu, " ").trim();
+}
+
 function fileSha256(content) {
   return createHash("sha256").update(content, "utf8").digest("hex");
 }
@@ -112,6 +181,24 @@ test("generated application satisfies the immutable mission contract", async () 
   const combined = [html, css, script].join("\\n");
   for (const required of requirements.requiredText) {
     assert.ok(combined.includes(required), "Generated application must contain: " + required);
+  }
+  const renderedText = visibleText(html);
+  for (const check of requirements.acceptanceChecks) {
+    if (check.kind === "visible-text") {
+      assert.ok(renderedText.includes(normalizedText(check.value)), "Visible application text must contain: " + check.value);
+    } else if (check.kind === "control" && check.value === "filter") {
+      assert.match(html, /<(button|select|input)[^>]*(filter|status)/iu, "A status filter control is required.");
+      assert.match(script, /addEventListener/u, "The filter must have local JavaScript behavior.");
+    } else if (check.kind === "control" && check.value === "search") {
+      assert.match(html, /<input[^>]*(search|placeholder)/iu, "A local search field is required.");
+      assert.match(script, /addEventListener/u, "The search field must have local JavaScript behavior.");
+    } else if (check.kind === "source-policy" && check.value === "responsive") {
+      assert.match(css, /@media/u, "Responsive CSS is required.");
+    } else if (check.kind === "source-policy" && check.value === "local-only") {
+      assert.doesNotMatch(combined, /https?:\\/\\//iu, "External HTTP resources are forbidden.");
+    } else {
+      assert.fail("Unsupported executable acceptance check: " + JSON.stringify(check));
+    }
   }
   assert.match(html, /app\\.css/u);
   assert.match(html, /app\\.js/u);
@@ -151,85 +238,97 @@ export async function createStaticWebProject(options) {
   }
   const requirements = validateStaticWebRequirements(options.requirements);
   const root = await mkdtemp(path.join(options.temporaryRoot, "real-project-"));
-  const projectRoot = path.join(root, "static-web-project");
-  await mkdir(path.join(projectRoot, "public"), { recursive: true });
-  await mkdir(path.join(projectRoot, "scripts"));
-  await mkdir(path.join(projectRoot, "test"));
-  await writeFile(
-    path.join(projectRoot, "package.json"),
-    `${JSON.stringify(
-      {
-        name: "forgeos-generated-static-app",
-        version: "0.0.0",
-        private: true,
-        type: "module",
-        scripts: { build: "node scripts/build-check.mjs", test: "node --test" }
-      },
-      null,
-      2
-    )}\n`,
-    "utf8"
-  );
-  await writeFile(
-    path.join(projectRoot, "requirements.json"),
-    `${JSON.stringify(requirements, null, 2)}\n`,
-    "utf8"
-  );
-  await writeFile(path.join(projectRoot, "scripts", "build-check.mjs"), buildCheckSource, "utf8");
-  await writeFile(
-    path.join(projectRoot, "test", "acceptance.test.mjs"),
-    acceptanceTestSource,
-    "utf8"
-  );
-  await writeFile(
-    path.join(projectRoot, "public", "index.html"),
-    `<!doctype html>\n<html lang="en">\n<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${requirements.displayName}</title></head>\n<body><main><h1>Starter project for ${requirements.displayName}</h1><p>ForgeOS will materialize this mission in an isolated workspace.</p></main></body>\n</html>\n`,
-    "utf8"
-  );
-  const immutablePaths = [
-    "package.json",
-    "requirements.json",
-    "scripts/build-check.mjs",
-    "test/acceptance.test.mjs"
-  ];
-  const immutableFiles = Object.fromEntries(
-    await Promise.all(
-      immutablePaths.map(async (relativePath) => [
-        relativePath,
-        sha256(await readFile(path.join(projectRoot, relativePath), "utf8"))
-      ])
-    )
-  );
-  await writeFile(
-    path.join(projectRoot, "immutable-manifest.json"),
-    `${JSON.stringify({ schemaVersion: "1", files: immutableFiles }, null, 2)}\n`,
-    "utf8"
-  );
-  await execFileAsync("git", ["init", "--quiet", "--initial-branch=main"], { cwd: projectRoot });
-  await execFileAsync("git", ["add", "."], { cwd: projectRoot });
-  await execFileAsync(
-    "git",
-    [
-      "-c",
-      "user.name=ForgeOS Demo",
-      "-c",
-      "user.email=demo@forgeos.local",
-      "commit",
-      "--quiet",
-      "-m",
-      "Create immutable static web starter"
-    ],
-    { cwd: projectRoot }
-  );
-  const { stdout } = await execFileAsync("git", ["rev-parse", "HEAD"], {
-    cwd: projectRoot,
-    encoding: "utf8"
-  });
-  return Object.freeze({
-    temporaryRoot: await realpath(root),
-    projectRoot: await realpath(projectRoot),
-    baseRevision: stdout.trim(),
-    requirements,
-    requirementsSha256: sha256(canonicalJson(requirements))
-  });
+  try {
+    const projectRoot = path.join(root, "static-web-project");
+    await mkdir(path.join(projectRoot, "public"), { recursive: true });
+    await mkdir(path.join(projectRoot, "scripts"));
+    await mkdir(path.join(projectRoot, "test"));
+    await writeFile(
+      path.join(projectRoot, "package.json"),
+      `${JSON.stringify(
+        {
+          name: "forgeos-generated-static-app",
+          version: "0.0.0",
+          private: true,
+          type: "module",
+          scripts: { build: "node scripts/build-check.mjs", test: "node --test" }
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+    await writeFile(
+      path.join(projectRoot, "requirements.json"),
+      `${JSON.stringify(requirements, null, 2)}\n`,
+      "utf8"
+    );
+    await writeFile(path.join(projectRoot, "scripts", "build-check.mjs"), buildCheckSource, "utf8");
+    await writeFile(
+      path.join(projectRoot, "test", "acceptance.test.mjs"),
+      acceptanceTestSource,
+      "utf8"
+    );
+    await writeFile(
+      path.join(projectRoot, "public", "index.html"),
+      `<!doctype html>\n<html lang="en">\n<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${requirements.displayName}</title></head>\n<body><main><h1>Starter project for ${requirements.displayName}</h1><p>ForgeOS will materialize this mission in an isolated workspace.</p></main></body>\n</html>\n`,
+      "utf8"
+    );
+    const immutablePaths = [
+      "package.json",
+      "requirements.json",
+      "scripts/build-check.mjs",
+      "test/acceptance.test.mjs"
+    ];
+    const immutableFiles = Object.fromEntries(
+      await Promise.all(
+        immutablePaths.map(async (relativePath) => [
+          relativePath,
+          sha256(await readFile(path.join(projectRoot, relativePath), "utf8"))
+        ])
+      )
+    );
+    await writeFile(
+      path.join(projectRoot, "immutable-manifest.json"),
+      `${JSON.stringify({ schemaVersion: "1", files: immutableFiles }, null, 2)}\n`,
+      "utf8"
+    );
+    await execFileAsync("git", ["init", "--quiet", "--initial-branch=main"], { cwd: projectRoot });
+    await execFileAsync("git", ["add", "."], { cwd: projectRoot });
+    await execFileAsync(
+      "git",
+      [
+        "-c",
+        "user.name=ForgeOS Demo",
+        "-c",
+        "user.email=demo@forgeos.local",
+        "commit",
+        "--quiet",
+        "-m",
+        "Create immutable static web starter"
+      ],
+      { cwd: projectRoot }
+    );
+    const { stdout } = await execFileAsync("git", ["rev-parse", "HEAD"], {
+      cwd: projectRoot,
+      encoding: "utf8"
+    });
+    return Object.freeze({
+      temporaryRoot: await realpath(root),
+      projectRoot: await realpath(projectRoot),
+      baseRevision: stdout.trim(),
+      requirements,
+      requirementsSha256: sha256(canonicalJson(requirements))
+    });
+  } catch (error) {
+    try {
+      await rm(root, { recursive: true, force: true });
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        "Static web fixture setup failed and its temporary root could not be removed."
+      );
+    }
+    throw error;
+  }
 }
