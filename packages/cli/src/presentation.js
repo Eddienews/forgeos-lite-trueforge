@@ -43,22 +43,26 @@ export function candidateSummaryLines(summary) {
 
 export function parseArguments(argv) {
   const [command = "help", ...flags] = argv;
-  const allowedCommands = new Set(["check", "demo", "help"]);
+  const allowedCommands = new Set(["check", "demo", "help", "real"]);
   if (!allowedCommands.has(command)) {
     throw new Error(`Unknown ForgeOS Lite command: ${command}.`);
   }
-  const allowedFlags = new Set(["--deny", "--json", "--keep-project", "--verbose"]);
+  const allowedFlags = new Set(["--deny", "--json", "--keep-project", "--reading", "--verbose"]);
   for (const flag of flags) {
     if (!allowedFlags.has(flag)) throw new Error(`Unknown ForgeOS Lite option: ${flag}.`);
   }
-  if (command !== "demo" && flags.length > 0) {
+  if (!new Set(["demo", "real"]).has(command) && flags.length > 0) {
     throw new Error(`Command ${command} does not accept options.`);
+  }
+  if (flags.includes("--reading") && command !== "real") {
+    throw new Error("Option --reading is available only for the real-project smoke proof.");
   }
   return Object.freeze({
     command,
     deny: flags.includes("--deny"),
     json: flags.includes("--json"),
     keepProject: flags.includes("--keep-project"),
+    reading: flags.includes("--reading"),
     verbose: flags.includes("--verbose")
   });
 }
@@ -69,12 +73,14 @@ export function helpText() {
     "",
     "Commands:",
     "  npm run demo             Run the interactive approval demo.",
+    "  npm run demo:real        Build an unseen multi-file app with the bounded TrueForge Builder.",
     "  npm run demo:deny        Run the real human-denial path.",
     "  npm run demo:check       Verify local demo prerequisites.",
     "",
     "Demo options:",
     "  --keep-project           Preserve the disposable target project.",
     "  --verbose                Show additional public execution identifiers.",
-    "  --json                   Print a final structured public summary."
+    "  --json                   Print a final structured public summary.",
+    "  --reading                Use the reading-list generalization smoke mission."
   ].join("\n");
 }

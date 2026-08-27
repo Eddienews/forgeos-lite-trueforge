@@ -19,7 +19,7 @@ async function write(root, relativePath, content) {
 export async function createDemoProject(demoRoot) {
   const projectRoot = path.join(demoRoot, "greeting-project");
   await mkdir(projectRoot);
-  await git(projectRoot, "init", "--quiet");
+  await git(projectRoot, "init", "--quiet", "--initial-branch=main");
   await git(projectRoot, "config", "user.name", "ForgeOS Lite Demo");
   await git(projectRoot, "config", "user.email", "forgeos-lite-demo@example.invalid");
   await write(

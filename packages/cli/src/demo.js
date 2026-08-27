@@ -31,15 +31,24 @@ import { startLocalTrueForge } from "./trueforge-local.js";
 
 const execFileAsync = promisify(execFile);
 const connectorName = "forgeos-lite-demo-approval";
-const missionText =
+export const DEMO_MISSION_TEXT =
   "Update the greeting returned by the application and keep all tests passing.";
 const expectedGreeting = 'export const greeting = "Hello from the TrueForge sandbox.";\n';
+
+async function publishUpdate(options, type, value = {}) {
+  if (typeof options.onUpdate !== "function") return;
+  try {
+    await options.onUpdate(Object.freeze({ type, value: structuredClone(value) }));
+  } catch {
+    // Presentation observers cannot influence mission authority or cleanup.
+  }
+}
 
 async function git(root, ...args) {
   return execFileAsync("git", args, { cwd: root, encoding: "utf8" });
 }
 
-async function unusedPort() {
+export async function unusedPort() {
   const server = createServer();
   await new Promise((resolve, reject) => {
     server.once("error", reject);
@@ -52,7 +61,7 @@ async function unusedPort() {
   return address.port;
 }
 
-async function api(baseUrl, pathname, options = {}) {
+export async function api(baseUrl, pathname, options = {}) {
   const { allowNotFound = false, timeoutMs = 30_000, ...fetchOptions } = options;
   const response = await fetch(new URL(pathname, baseUrl), {
     ...fetchOptions,
@@ -116,7 +125,7 @@ function demoMission() {
   return {
     missionId: "mission-demo",
     title: "Update the greeting",
-    brief: missionText,
+    brief: DEMO_MISSION_TEXT,
     successCriteria: [
       "The greeting names the TrueForge sandbox.",
       "The declared build and test policies pass.",
@@ -140,7 +149,7 @@ function demoMission() {
   };
 }
 
-function trackedDriver(baseUrl, workspaceRoots) {
+export function trackedDriver(baseUrl, workspaceRoots) {
   const driver = createTrueForgeHttpDriver({
     baseUrl,
     agentSpec: {
@@ -181,7 +190,7 @@ function trackedDriver(baseUrl, workspaceRoots) {
   };
 }
 
-async function createApprovalSession(baseUrl, service) {
+export async function createApprovalSession(baseUrl, service) {
   await api(baseUrl, "/api/v1/settings/mcp-servers", {
     method: "PUT",
     body: JSON.stringify({
@@ -229,7 +238,7 @@ async function createApprovalSession(baseUrl, service) {
   });
 }
 
-async function invokeApproval(baseUrl, sessionId, contextId) {
+export async function invokeApproval(baseUrl, sessionId, contextId) {
   const invoked = await api(baseUrl, `/api/v1/sessions/${sessionId}/turns`, {
     method: "POST",
     body: JSON.stringify({
@@ -252,7 +261,7 @@ async function invokeApproval(baseUrl, sessionId, contextId) {
   return { paused, approvalAction, toolCall: approvalAction.tool_calls[0] };
 }
 
-async function answerApproval(baseUrl, sessionId, paused, approvalAction, toolCall, status) {
+export async function answerApproval(baseUrl, sessionId, paused, approvalAction, toolCall, status) {
   return api(baseUrl, `/api/v1/sessions/${sessionId}/turns`, {
     method: "POST",
     body: JSON.stringify({
@@ -270,8 +279,18 @@ async function answerApproval(baseUrl, sessionId, paused, approvalAction, toolCa
   });
 }
 
-async function promptForDecision(deny) {
+export async function promptForDecision(deny, decisionProvider) {
   if (deny) return "deny";
+  if (decisionProvider !== undefined) {
+    if (typeof decisionProvider !== "function") {
+      throw new Error("The approval decision provider must be a function.");
+    }
+    const decision = await decisionProvider();
+    if (decision !== "allow" && decision !== "deny") {
+      throw new Error("The approval decision must be allow or deny.");
+    }
+    return decision;
+  }
   if (!process.stdin.isTTY) {
     throw new Error("Interactive approval requires a terminal. Run npm run demo in a terminal.");
   }
@@ -286,7 +305,7 @@ async function promptForDecision(deny) {
   }
 }
 
-async function removeDemoSandboxes(sandboxRoot, workspaceRoots) {
+export async function removeDemoSandboxes(sandboxRoot, workspaceRoots) {
   for (const workspace of workspaceRoots) {
     const relative = path.relative(sandboxRoot, workspace);
     const [topLevel] = relative.split(path.sep);
@@ -336,6 +355,21 @@ function printLines(lines) {
   for (const line of lines) console.log(line);
 }
 
+async function publicCandidateChanges(pending) {
+  const changes = [];
+  for (const operation of pending.artifact.operations) {
+    const target = path.join(pending.projectRoot, ...operation.path.split("/"));
+    changes.push({
+      path: operation.path,
+      operation: operation.operation,
+      before:
+        operation.operation === "add" ? null : await readFile(target, "utf8"),
+      after: operation.operation === "delete" ? null : operation.content
+    });
+  }
+  return changes;
+}
+
 export async function runDemo(options) {
   const startedAt = performance.now();
   const preflight = await runPreflight({
@@ -373,12 +407,17 @@ export async function runDemo(options) {
   try {
     fixture = await createDemoProject(demoRoot);
     result.projectRoot = fixture.projectRoot;
+    await publishUpdate(options, "project_connected", {
+      project: { name: "greeting-project", branch: "main", clean: true, type: "Node.js" },
+      baseRevision: fixture.baseRevision
+    });
     console.log(stage("PROJECT CONNECTED"));
     console.log(`Disposable Git project: ${fixture.projectRoot}`);
     console.log(`Baseline revision: ${abbreviate(fixture.baseRevision)}`);
 
     console.log(stage("MISSION RECEIVED"));
-    console.log(missionText);
+    console.log(DEMO_MISSION_TEXT);
+    await publishUpdate(options, "mission_received", { mission: DEMO_MISSION_TEXT });
 
     trueForge = await startLocalTrueForge({
       apiKey: process.env.OPENAI_API_KEY,
@@ -392,11 +431,19 @@ export async function runDemo(options) {
       trustedWorkspaceRoot: preflight.sandboxRoot,
       executionTimeoutMs: 120_000
     });
+    await publishUpdate(options, "autonomous_work_running", {
+      outcome: "ForgeOS is working in an isolated TrueForge workspace."
+    });
     const summary = await orchestrator.runMission({
       project: demoProject(fixture),
       mission: demoMission()
     });
     if (summary.status !== "awaiting_approval") {
+      await publishUpdate(options, "mission_failed", {
+        failure: summary.failure,
+        originalUnchanged: summary.originalUnchanged,
+        validationSummary: summary.validationSummary
+      });
       throw new Error(
         `Mission stopped at ${summary.failure?.stage ?? summary.status}: ${summary.failure?.summary ?? "unknown failure"}`
       );
@@ -424,6 +471,34 @@ export async function runDemo(options) {
     const pending = orchestrator.getPendingApplicationContext("mission-demo");
     result.candidateId = pending.candidate.candidateId;
     result.candidateSha256 = pending.candidate.patchSha256;
+    await publishUpdate(options, "candidate_ready", {
+      outcome: "Updated the application greeting successfully.",
+      plan: {
+        objective: summary.plan.objective,
+        scope: summary.plan.expectedScope,
+        builderActions: summary.plan.steps
+          .filter((entry) => entry.actor === "builder")
+          .map((entry) => entry.summary),
+        validationPolicies: summary.plan.validationPolicyIds,
+        reviewerCriteria:
+          "Scope, candidate identity, Builder proof, and validation evidence must match."
+      },
+      validation: summary.validationSummary.map((entry) => ({
+        policyId: entry.policyId,
+        success: entry.success,
+        durationMs: Date.parse(entry.completedAt) - Date.parse(entry.startedAt)
+      })),
+      reviewer: { decision: summary.reviewerVerdict.decision },
+      candidate: {
+        id: pending.candidate.candidateId,
+        sha256: pending.candidate.patchSha256,
+        baseRevision: pending.candidate.baseRevision,
+        affectedFiles: pending.candidate.affectedFiles
+      },
+      changes: await publicCandidateChanges(pending),
+      timeline: summary.timeline,
+      originalUnchanged: summary.originalUnchanged
+    });
     const beforeApproval = await originalProjectSnapshot(fixture.projectRoot);
     assert.equal(summary.originalUnchanged, true);
     assert.deepEqual(beforeApproval, await originalProjectSnapshot(fixture.projectRoot));
@@ -450,13 +525,17 @@ export async function runDemo(options) {
     const approval = await invokeApproval(trueForge.baseUrl, approvalSession.id, contextId);
     result.approvalEvent = approval.approvalAction.type;
     assert.deepEqual(await originalProjectSnapshot(fixture.projectRoot), beforeApproval);
+    await publishUpdate(options, "approval_required", {
+      eventType: approval.approvalAction.type
+    });
 
     console.log(stage("AWAITING HUMAN APPROVAL"));
     console.log("TrueForge event: tool.approval_required");
     console.log("TrueForge paused before the irreversible action.");
     console.log("Original project unchanged.");
     console.log("Approve candidate application?");
-    const decision = await promptForDecision(options.deny);
+    const decision = await promptForDecision(options.deny, options.decisionProvider);
+    await publishUpdate(options, "human_decision_submitted", { decision });
 
     if (decision === "deny") {
       const denied = await answerApproval(
@@ -496,6 +575,10 @@ export async function runDemo(options) {
       result.decision = "denied";
       result.denialEventCannotBeReused = true;
       result.gitHeadUnchanged = true;
+      await publishUpdate(options, "denied", {
+        originalUnchanged: true,
+        eventCannotBeReused: true
+      });
       console.log(stage("HUMAN DENIED"));
       console.log("Patch not applied; project unchanged.");
       console.log(
@@ -530,6 +613,9 @@ export async function runDemo(options) {
         contextId,
         approvalContext: approvalRecord.approvalContext
       });
+      await publishUpdate(options, "applying", {
+        candidateId: pending.candidate.candidateId
+      });
       console.log(stage("HUMAN APPROVED"));
       console.log("TrueForge accepted user.tool_approval: allow.");
       const completed = await waitForTurn(trueForge.baseUrl, approvalSession.id, resumed.id);
@@ -552,6 +638,14 @@ export async function runDemo(options) {
       result.appliedFiles = ["src/greeting.js"];
       result.approvalConsumed = true;
       result.gitHeadUnchanged = true;
+      await publishUpdate(options, "applied", {
+        outcome: "Updated the application greeting successfully.",
+        appliedFiles: ["src/greeting.js"],
+        gitHeadUnchanged: true,
+        commitCreated: false,
+        pushPerformed: false,
+        approvalConsumed: true
+      });
       console.log(stage("PATCH APPLIED"));
       console.log("Applied files: src/greeting.js");
       console.log(`Git HEAD unchanged: ${abbreviate(head)}`);
@@ -593,6 +687,10 @@ export async function runDemo(options) {
     ]);
     result.cleanup = cleanupFailures.length === 0 ? "completed" : "failed";
     result.durationMs = Math.round(performance.now() - startedAt);
+    await publishUpdate(options, "cleanup_completed", {
+      status: result.cleanup,
+      durationMs: result.durationMs
+    });
   }
   if (primaryError !== null) {
     if (cleanupFailures.length > 0) {

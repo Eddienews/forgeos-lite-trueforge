@@ -2,7 +2,7 @@
 
 ## System context
 
-TrueForge is the central agent harness. ForgeOS Lite supplies domain contracts, mission coordination, review policy, candidate application, and a terminal demo surface. It does not replace TrueForge model access, sessions, sandboxing, or tool orchestration.
+TrueForge is the central agent harness. ForgeOS Lite supplies domain contracts, mission coordination, review policy, candidate application, a terminal proof surface, and ForgeOS Control as a loopback-only visual control plane. It does not replace TrueForge model access, sessions, sandboxing, or tool orchestration.
 
 ## Workspace
 
@@ -12,15 +12,17 @@ packages/
   core/                   Mission state and handoff rules
   runtime-trueforge/      TrueForge session and execution boundary
   candidate-patch/        Deterministic reviewed text changes
-  mcp-server/             Approval-gated candidate application
+  mcp-server/             Approval gate and bounded Builder workspace tools
   orchestrator/           Fixed Phase 4 mission vertical slice
-  cli/                    Phase 5 presentation and control plane
+  cli/                    Terminal proofs and run-specific mission fixtures
+  control/                Loopback-only visual presentation surface
+  real-project/           Bounded multi-file mission and preview orchestration
 scripts/
   create-demo-project.mjs Fresh disposable Git fixture generator
 docs/                     Architecture, security, and event material
 ```
 
-Phase 1 implements `packages/contracts` and `packages/core`. Phase 2 implements `packages/runtime-trueforge`. Phase 3 implements `packages/candidate-patch` and `packages/mcp-server`. Phase 4 implements `packages/orchestrator`. Phase 5 adds `packages/cli` and a generated disposable fixture without changing the authority architecture. A web interface, application server, durable persistence, and general autonomous orchestration remain deferred.
+Phase 1 implements `packages/contracts` and `packages/core`. Phase 2 implements `packages/runtime-trueforge`. Phase 3 implements `packages/candidate-patch` and the approval portion of `packages/mcp-server`. Phase 4 implements `packages/orchestrator`. Phase 5 adds `packages/cli` and a generated disposable greeting fixture without changing the authority architecture. The current Control gate adds `packages/control`, `packages/real-project`, and a second narrow MCP boundary for model-driven file work in an isolated Builder workspace. Durable persistence, restart recovery, a remote application server, and general autonomous orchestration remain deferred.
 
 ## Phase 1 public APIs
 
@@ -87,6 +89,24 @@ The controlled Phase 4 Builder pattern uses the already declared `npm-run-build`
 
 The existing hash-chained journal now also accepts a closed set of `mission.milestone` events. Milestones record public plan, workspace, Builder, validation, Reviewer, and candidate progress without changing state. Replay skips milestones when deriving state and continues to validate their exact shape, hash, ordering, actor, timestamp, and forbidden fields.
 
+## ForgeOS Control and generalized real-project mode
+
+`packages/real-project` extends the proven authority path without replacing the Phase 4 orchestrator or Phase 3 CandidatePatch:
+
+- A fresh dependency-free Node.js web starter contains immutable run-specific requirements, build checks, acceptance tests, and one writable `public/` tree.
+- The Coordinator emits a bounded public plan tied to the exact mission, base revision, immutable requirements, allowed scope, validation policies, and risk notes. It makes no model call and cannot broaden the admitted manifest authority.
+- A real TrueForge 0.1.4 Builder session uses `gpt-5.4-mini` and receives only the authenticated Builder workspace MCP connector. It receives no general shell tool.
+- The Builder may list and read the admitted immutable context, but may write or delete only ordinary UTF-8 application files below `public/`. Absolute paths, traversal, dotfiles, `.git`, symlinks, executables, unsupported extensions, more than eight changed files, files above 100 KB, and candidates above 200 KB fail closed.
+- ForgeOS computes the authoritative Git diff, fingerprints immutable and external workspace state, and runs the fixed `npm-run-build` and `npm-test` policies. Validation evidence, rather than Builder claims, determines success.
+- One initial Builder turn and at most two sanitized repair turns are allowed. Exhaustion blocks candidate creation and leaves the original project unchanged.
+- The existing deterministic Reviewer binds the exact mission, base, actual diff, immutable requirements identity, validation workspace, candidate hash, and scope before creating the existing CandidatePatch.
+
+`packages/control` exposes this path through a loopback-only HTTP surface. The browser receives presentation data only; provider credentials, MCP bearer tokens, filesystem roots, CandidatePatch authority, ApprovalRecord state, and application capability remain server-side.
+
+Before approval, `packages/real-project` materializes the exact validated CandidatePatch into a separate read-only temporary preview root. The preview server binds to an ephemeral `127.0.0.1` port, permits only GET and HEAD, rejects traversal, dotfiles, symlinks, and directory listing, and sends a restrictive Content Security Policy. ForgeOS Control embeds it with exactly `sandbox="allow-scripts"`, without same-origin, form, popup, download, or top-navigation authority. Preview never applies the candidate and does not change the real approval path.
+
+The real `tool.approval_required` event remains the sole human gate. Allow resumes the exact bound TrueForge tool call and enters the existing single-use application path. Deny leaves the target unchanged and cannot later be replayed as allow.
+
 ## Agent profiles
 
 - **Coordinator:** inspects project metadata, validates the manifest, creates the plan, and delegates bounded work.
@@ -151,7 +171,7 @@ The target must be a canonical Git repository root with a clean working tree and
 
 TrueForge owns agent session persistence. ForgeOS Lite stores public mission contracts and emits timeline events through the server. The adapter maps TrueForge session, agent, tool, sandbox, and approval events into stable public contracts without exposing credentials or private chain-of-thought.
 
-Phase 1 implements only in-memory journal construction, verification, and replay. Phase 2 execution evidence and Phase 3 candidate, approval, and application evidence are returned to their callers but are not durably stored. Phase 4 retains its plan, Builder result, validation summaries, candidate, pending application context, and replayed timeline in one in-memory orchestrator process. The Phase 3 live proof uses the same journal to distinguish `awaiting_approval`, `applying`, and `completed`; `applying` is entered from the MCP callback only after TrueForge has resumed the approved tool and the exact human record has been validated. Filesystem journal persistence, the application server, and reconnection behavior remain deferred. A trusted journal anchor is required to detect removal of the final event because a hash chain alone cannot prove that its tail is complete.
+Phase 1 implements only in-memory journal construction, verification, and replay. Phase 2 execution evidence and Phase 3 candidate, approval, and application evidence are returned to their callers but are not durably stored. Phase 4 retains its plan, Builder result, validation summaries, candidate, pending application context, and replayed timeline in one in-memory orchestrator process. The Phase 3 live proof uses the same journal to distinguish `awaiting_approval`, `applying`, and `completed`; `applying` is entered from the MCP callback only after TrueForge has resumed the approved tool and the exact human record has been validated. ForgeOS Control retains one active local mission in memory and loses it on restart. Filesystem journal persistence, remote serving, and reconnection behavior remain deferred. A trusted journal anchor is required to detect removal of the final event because a hash chain alone cannot prove that its tail is complete.
 
 ## Phase 2 runtime limits
 
@@ -179,6 +199,14 @@ Phase 1 implements only in-memory journal construction, verification, and replay
 - The fixed Reviewer evaluates deterministic public evidence and does not run an open-ended model review.
 - Mission summaries and pending application contexts are in memory and do not survive process restart.
 - Phase 4 stops before human approval. Phase 3 remains the only application path.
+
+## Control and real-project limits
+
+- ForgeOS Control serves one local user on loopback and holds one mission in memory. It is not an authenticated remote or multi-user service.
+- Generalized real-project mode supports one clean local Node.js Git project with a dependency-free static application below `public/`.
+- Builder model access is limited to the admitted file tools. Package installation, external network access, arbitrary commands, commits, pushes, and deployment are not available.
+- Candidate preview is temporary and local. It is removed when the mission is reset or the Control process exits unless a proof command explicitly preserves its fixture.
+- Repair is bounded to two turns after the initial Builder turn. A truthful bounded failure is preferred over authority expansion or skipped validation.
 
 ## Language boundary
 

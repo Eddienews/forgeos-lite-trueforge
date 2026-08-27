@@ -24,6 +24,13 @@ import {
 } from "@forgeos-lite/contracts";
 import * as z from "zod/v4";
 
+export {
+  BUILDER_WORKSPACE_TOOL_NAMES,
+  createBuilderWorkspaceBoundary,
+  startBuilderWorkspaceMcpServer,
+  trueForgeBuilderWorkspaceConfiguration
+} from "./builder-workspace.js";
+
 export const APPLY_CANDIDATE_TOOL_NAME = "apply_candidate_patch";
 export const APPLY_CANDIDATE_TOOL_ANNOTATIONS = Object.freeze({
   title: "Apply reviewed candidate patch",

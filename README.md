@@ -14,18 +14,33 @@ Prerequisites are Node.js 22, Git, and an OpenAI API key stored as `OPENAI_API_K
 npm install
 npm test
 npm run demo:check
-npm run demo
+npm run demo:real
 ```
 
-At the prompt, type `APPROVE` to send a real `user.tool_approval` allow response through TrueForge. The demo creates a fresh disposable Git fixture under `/tmp/forgeos-lite`, prepares and reviews a candidate in the TrueForge sandbox, proves the fixture remains unchanged, pauses at the real approval event, then applies exactly one reviewed source change. It creates no commit or push and cleans up its local services and temporary data.
+At the prompt, type `APPROVE` to send a real `user.tool_approval` allow response through TrueForge. The real-project proof creates a fresh dependency-free Git web starter under `/tmp/forgeos-lite`, generates run-specific requirements, lets the bounded TrueForge Builder inspect the starter and create the multi-file application, runs fixed build and test policies, materializes a sealed candidate preview, proves the fixture remains unchanged, and pauses at the real approval event. It creates no commit or push and cleans up its local services and temporary data.
+
+`npm run demo` remains the fast deterministic greeting smoke and regression proof.
+
+## ForgeOS Control
+
+ForgeOS Control is the minimal local visual surface for the same proven demo workflow. It keeps the result, exact changed file, validation, original-project safety state, and human gate understandable without reading terminal logs.
+
+```sh
+npm run demo:check
+npm run control
+```
+
+Open `http://127.0.0.1:4173`, run the prepared operations-dashboard mission or submit another bounded static web idea, inspect the working application in Preview, review its exact files, and choose Reject or Apply Changes only when the real TrueForge approval event appears. The preview is a read-only CandidatePatch materialization served from a separate loopback port inside an iframe limited to `sandbox="allow-scripts"`. The browser is presentation-only: the local Node.js server retains the API key, MCP bearer tokens, filesystem access, CandidatePatch, ApprovalRecord, and application authority.
 
 Useful commands:
 
 | Command | Purpose |
 | --- | --- |
-| `npm run demo` | Run the primary interactive allow demo |
+| `npm run demo:real` | Build and preview a new multi-file application with TrueForge |
+| `npm run demo` | Run the deterministic greeting smoke/regression proof |
 | `npm run demo:deny` | Exercise the real denial path |
 | `npm run demo:check` | Check prerequisites without exposing credentials |
+| `npm run control` | Start ForgeOS Control on loopback only |
 | `npm run demo -- --keep-project` | Preserve the disposable target for inspection |
 | `npm run verify` | Run tests, repository gates, the lightweight secret check, and npm audit |
 
@@ -64,20 +79,20 @@ Application revalidates the candidate, approval, Reviewer evidence, target root,
 TrueForge is operational, not decorative. ForgeOS Lite uses TrueForge 0.1.4 for:
 
 - real local session execution;
-- isolated sandbox work;
-- model-backed Builder command execution with `gpt-5.4-mini`;
+- model-backed Builder file work with `gpt-5.4-mini` through a bounded workspace MCP interface;
+- isolated, public-only UTF-8 application edits without model shell authority;
 - declared build and test validation;
 - the MCP `tool.approval_required` pause and `user.tool_approval` resume.
 
-The CLI starts a disposable local TrueForge service and configures its temporary provider at runtime. The API key is passed only to that disposable service configuration, is never printed, and the temporary service data is removed at shutdown. The TrueForge installation and repository configuration are not modified.
+The CLI and ForgeOS Control start a disposable local TrueForge service and configure its temporary provider at runtime. The API key is passed only to that disposable service configuration, is never sent to the browser or printed, and the temporary service data is removed at shutdown. The TrueForge installation and repository configuration are not modified.
 
 TrueForge 0.1.4 supports remote Streamable HTTP MCP connectors rather than stdio connectors. The approval server therefore binds only to loopback and requires a random connector-only bearer token. HTTP command dispatch is model-mediated; ForgeOS Lite verifies the merged TrueForge tool event against the exact prevalidated command, working directory, and environment.
 
 ## Demo implementation
 
-The terminal package is presentation and control-plane code only. It calls the existing Phase 1–4 public APIs and does not duplicate orchestration, review, candidate generation, application, or approval authority.
+The terminal and Control packages are presentation and control-plane code only. They call the existing security contracts, CandidatePatch, runtime, and approval APIs and do not receive application authority.
 
-The fixture generator creates a tiny Git project from scratch for each run. Its declared build changes one greeting module, and its test accepts the baseline and expected demo sentence. The fixed Coordinator derives the public plan, the real TrueForge Builder runs the declared transformation and validation in a fresh clone, and the fixed Reviewer evaluates only structured evidence. The original is compared before approval and again after denial or application.
+The real-project fixture generator creates a minimal Git web starter and immutable run-specific acceptance contract from scratch. The Coordinator creates a bounded public plan, the TrueForge Builder receives only admitted file tools for the isolated clone, and ForgeOS computes the authoritative diff before running the fixed build and test policies. A maximum of two repair turns may follow the initial Builder turn. The deterministic Reviewer binds the exact mission, base revision, immutable requirements, scope, candidate hash, and validation evidence before the existing CandidatePatch can become eligible for preview or approval.
 
 See [docs/DEMO-SCRIPT.md](docs/DEMO-SCRIPT.md) for the approximately three-minute narration, [docs/DEMO-EVIDENCE.md](docs/DEMO-EVIDENCE.md) for the exact live proof, and [docs/SUBMISSION-CHECKLIST.md](docs/SUBMISSION-CHECKLIST.md) for release readiness.
 
@@ -103,9 +118,9 @@ Phase 0 governance is recorded separately in [PR #1](https://github.com/Eddienew
 
 ## Scope and limitations
 
-ForgeOS Lite currently supports one clean local Node.js Git repository and one fixed in-memory mission at a time. The demo intentionally uses a declared project build transformation rather than a general model-authored edit language. Mission journals and approval registries are in memory and are not restart-safe. Multi-file application uses complete preflight checks and best-effort rollback rather than a portable atomic filesystem transaction.
+ForgeOS Lite currently supports one clean local Node.js Git project and one in-memory mission at a time. The generalized Builder gate is intentionally limited to dependency-free static web applications, at most eight UTF-8 files and 200 KB below `public/`, with no network, package installation, arbitrary shell, commit, push, or deployment authority. Mission journals and approval registries are in memory and are not restart-safe. Multi-file application uses complete preflight checks and best-effort rollback rather than a portable atomic filesystem transaction.
 
-This phase does not add a web UI, backend, database, durable recovery, Python or static projects, general autonomous agents, multiple projects, teams, cloud execution, automatic commits, pushes, pull-request creation for target projects, deployment, billing, or marketplace features.
+ForgeOS Control is a loopback-only presentation adapter, not a general backend or new orchestration engine. This gate does not add a database, durable recovery, Python projects, multiple projects, teams, cloud execution, automatic commits, pushes, pull-request creation for target projects, deployment, billing, or marketplace features.
 
 ## Repository policy
 

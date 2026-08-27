@@ -1,0 +1,6 @@
+{
+  "name": "@forgeos-lite/control",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.js"
+}

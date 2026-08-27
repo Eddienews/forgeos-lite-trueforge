@@ -10,8 +10,10 @@
   "type": "module",
   "scripts": {
     "format:check": "node scripts/check-format.mjs",
+    "control": "node --env-file-if-exists=.env.local packages/control/src/index.js",
     "forgeos": "node --env-file-if-exists=.env.local packages/cli/src/index.js",
     "demo": "npm run forgeos -- demo",
+    "demo:real": "npm run forgeos -- real",
     "demo:check": "npm run forgeos -- check",
     "demo:deny": "npm run forgeos -- demo --deny",
     "secret:check": "node scripts/check-secrets.mjs",
