@@ -164,7 +164,7 @@ export function applyWorkflowUpdate(current, update) {
       next.timeline = publicTimeline(update.value.timeline);
       next.evidence = {
         ...next.evidence,
-        missionId: "mission-demo",
+        missionId: update.value.missionId,
         candidateId: update.value.candidate.id,
         candidateSha256: update.value.candidate.sha256,
         baseRevision: update.value.candidate.baseRevision,

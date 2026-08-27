@@ -1,4 +1,8 @@
-export { createStaticWebProject, validateStaticWebRequirements } from "./fixture.js";
+export {
+  containsExternalResource,
+  createStaticWebProject,
+  validateStaticWebRequirements
+} from "./fixture.js";
 export {
   prepareRealProjectCandidate,
   REAL_PROJECT_LIMITS,

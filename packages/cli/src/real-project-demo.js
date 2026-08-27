@@ -265,6 +265,7 @@ export async function runRealProjectDemo(options) {
     console.log(`Runtime values verified: ${spec.requirements.runId}`);
 
     await publishUpdate(options, "candidate_ready", {
+      missionId,
       outcome: spec.outcome,
       plan: publicPlan(plan),
       validation: prepared.validationEvidence.map((entry) => ({

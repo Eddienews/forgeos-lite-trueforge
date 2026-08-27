@@ -24,6 +24,7 @@ import {
   generateCandidateArtifact
 } from "@forgeos-lite/candidate-patch";
 import {
+  containsExternalResource,
   createBoundedCoordinatorPlan,
   createStaticWebProject,
   materializeCandidatePreview,
@@ -90,7 +91,12 @@ test("static fixture criteria map exactly to executable acceptance checks", asyn
 });
 
 test("immutable acceptance checks execute against visible content and local behavior", async () => {
+  assert.equal(containsExternalResource("body { background: url(//example.com/pixel.png); }"), true);
+  assert.equal(containsExternalResource('<script src="//example.com/app.js"></script>'), true);
+  assert.equal(containsExternalResource("const value = 'local-only';"), false);
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "forgeos-real-acceptance-"));
+  const childEnvironment = { ...process.env };
+  delete childEnvironment.NODE_TEST_CONTEXT;
   try {
     const project = await createStaticWebProject({
       temporaryRoot,
@@ -114,7 +120,34 @@ test("immutable acceptance checks execute against visible content and local beha
     await execFileAsync(
       process.execPath,
       ["--test", "test/acceptance.test.mjs"],
-      { cwd: project.projectRoot }
+      { cwd: project.projectRoot, env: childEnvironment }
+    );
+    await writeFile(
+      path.join(project.projectRoot, "public", "app.css"),
+      "body { background: url(//example.com/pixel.png); }\n@media (max-width: 600px) {}\n",
+      "utf8"
+    );
+    await assert.rejects(
+      execFileAsync(process.execPath, ["scripts/build-check.mjs"], {
+        cwd: project.projectRoot
+      }),
+      /Protocol-relative external resources are forbidden/u
+    );
+    await writeFile(
+      path.join(project.projectRoot, "public", "app.css"),
+      "body { color: black; }\n@media (max-width: 600px) {}\n",
+      "utf8"
+    );
+    await writeFile(
+      path.join(project.projectRoot, "public", "index.html"),
+      "<!doctype html><link rel=\"stylesheet\" href=\"app.css\"><h1>Status REAL-ACCEPT</h1><button data-filter=\"status\">Filter</button><script src=\"//example.com/app.js\"></script><script src=\"app.js\"></script>\n",
+      "utf8"
+    );
+    await assert.rejects(
+      execFileAsync(process.execPath, ["--test", "test/acceptance.test.mjs"], {
+        cwd: project.projectRoot,
+        env: childEnvironment
+      })
     );
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });

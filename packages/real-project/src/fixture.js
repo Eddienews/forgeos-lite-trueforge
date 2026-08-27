@@ -6,9 +6,17 @@ import { promisify } from "node:util";
 import { canonicalJson, sha256 } from "@forgeos-lite/contracts";
 
 const execFileAsync = promisify(execFile);
+const networkSchemePattern = /(?:https?|wss?|ftp):/iu;
+const protocolRelativeResourcePattern =
+  /(?:\b(?:src|href|action)\s*=\s*["']?\s*\/\/|\b(?:url|@import)\s*\(?\s*["']?\s*\/\/|\b(?:fetch|WebSocket|EventSource|Worker|importScripts|import)\s*\(\s*["']\s*\/\/)/iu;
 
 function fail(message) {
   throw new TypeError(message);
+}
+
+export function containsExternalResource(value) {
+  if (typeof value !== "string") fail("External-resource validation requires text.");
+  return networkSchemePattern.test(value) || protocolRelativeResourcePattern.test(value);
 }
 
 function canonicalStrings(value, label, maximumItems = 100, maximumLength = 1000) {
@@ -126,10 +134,13 @@ import { access, readFile } from "node:fs/promises";
 const requiredFiles = ["public/index.html", "public/app.css", "public/app.js"];
 await Promise.all(requiredFiles.map((file) => access(file)));
 const [html, css, script] = await Promise.all(requiredFiles.map((file) => readFile(file, "utf8")));
+const networkSchemePattern = ${networkSchemePattern};
+const protocolRelativeResourcePattern = ${protocolRelativeResourcePattern};
 assert.match(html, /app\\.css/u, "HTML must load public/app.css.");
 assert.match(html, /app\\.js/u, "HTML must load public/app.js.");
 assert.match(css, /@media/u, "CSS must contain responsive styling.");
-assert.doesNotMatch([html, css, script].join("\\n"), /https?:\\/\\//iu, "External resources are forbidden.");
+assert.doesNotMatch([html, css, script].join("\\n"), networkSchemePattern, "External network schemes are forbidden.");
+assert.doesNotMatch([html, css, script].join("\\n"), protocolRelativeResourcePattern, "Protocol-relative external resources are forbidden.");
 console.log("Static application integrity check passed.");
 `;
 
@@ -142,6 +153,8 @@ import test from "node:test";
 const requirements = JSON.parse(await readFile("requirements.json", "utf8"));
 const immutableManifest = JSON.parse(await readFile("immutable-manifest.json", "utf8"));
 const requiredFiles = ["public/index.html", "public/app.css", "public/app.js"];
+const networkSchemePattern = ${networkSchemePattern};
+const protocolRelativeResourcePattern = ${protocolRelativeResourcePattern};
 
 function visibleText(value) {
   return value
@@ -195,7 +208,8 @@ test("generated application satisfies the immutable mission contract", async () 
     } else if (check.kind === "source-policy" && check.value === "responsive") {
       assert.match(css, /@media/u, "Responsive CSS is required.");
     } else if (check.kind === "source-policy" && check.value === "local-only") {
-      assert.doesNotMatch(combined, /https?:\\/\\//iu, "External HTTP resources are forbidden.");
+      assert.doesNotMatch(combined, networkSchemePattern, "External network schemes are forbidden.");
+      assert.doesNotMatch(combined, protocolRelativeResourcePattern, "Protocol-relative external resources are forbidden.");
     } else {
       assert.fail("Unsupported executable acceptance check: " + JSON.stringify(check));
     }
@@ -203,7 +217,8 @@ test("generated application satisfies the immutable mission contract", async () 
   assert.match(html, /app\\.css/u);
   assert.match(html, /app\\.js/u);
   assert.match(css, /@media/u, "Responsive CSS is required.");
-  assert.doesNotMatch(combined, /https?:\\/\\//iu, "External HTTP resources are forbidden.");
+  assert.doesNotMatch(combined, networkSchemePattern, "External network schemes are forbidden.");
+  assert.doesNotMatch(combined, protocolRelativeResourcePattern, "Protocol-relative external resources are forbidden.");
   if (requirements.requiredControls.includes("filter")) {
     assert.match(html, /<(button|select|input)[^>]*(filter|status)/iu, "A status filter control is required.");
     assert.match(script, /addEventListener/u, "The filter must have local JavaScript behavior.");

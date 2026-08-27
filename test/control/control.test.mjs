@@ -13,6 +13,7 @@ function candidateUpdate() {
   return {
     type: "candidate_ready",
     value: {
+      missionId: "mission-control",
       outcome: "Updated the application greeting successfully.",
       plan: {
         objective: DEMO_MISSION_TEXT,
@@ -131,6 +132,7 @@ test("result view model keeps outcome primary and technical identity secondary",
   assert.equal(candidate.result.fileCount, 1);
   assert.equal(candidate.safety.message, "Your original project is still unchanged.");
   assert.equal(candidate.approval.canApply, false);
+  assert.equal(candidate.evidence.missionId, "mission-control");
   assert.equal(candidate.evidence.candidateId, "candidate-control");
   assert.equal(candidate.preview.url, "http://127.0.0.1:43123/");
 
