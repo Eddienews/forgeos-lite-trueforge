@@ -10,7 +10,7 @@ Developers need useful agent automation without granting an autonomous model unr
 
 ## Solution
 
-ForgeOS Lite uses TrueForge as the visible central harness. A Coordinator plans work, a Builder operates on a sandbox copy, and a Reviewer evaluates the plan, diff, tests, build evidence, and boundary checks. The system produces a content-addressed candidate patch. A separate approval-required MCP tool may apply exactly that reviewed patch to the real project.
+ForgeOS Lite uses TrueForge as the visible central harness. A Coordinator plans work, a Builder operates on a sandbox copy, and a Reviewer evaluates the plan, authoritative diff, tests, build evidence, and boundary checks. The system produces a content-addressed candidate patch that the user can inspect and run in an isolated preview. A separate approval-required MCP tool may apply exactly that reviewed patch to the real project.
 
 ## Initial scope
 
@@ -21,6 +21,8 @@ ForgeOS Lite uses TrueForge as the visible central harness. A Coordinator plans 
 - Public mission milestones with state, agent, activity, and next action.
 - In-memory mission and approval state for one process lifetime.
 - Candidate patch generation and approved application.
+- A loopback-only ForgeOS Control interface for mission entry, verified result, isolated candidate preview, exact changes, evidence, and the real human decision.
+- A bounded real-project mode for dependency-free static Node.js applications below `public/`, with immutable requirements and tests.
 
 ## Non-goals
 
@@ -38,8 +40,9 @@ ForgeOS Lite uses TrueForge as the visible central harness. A Coordinator plans 
 3. Declared tests and builds run in the sandbox copy.
 4. The Reviewer sees the exact patch and evidence later presented for approval.
 5. A changed or replayed patch is rejected.
-6. The terminal demo visibly separates candidate preparation, human approval, and application.
-7. The public repository is reproducible and records Qodo review evidence for every substantive pull request.
+6. ForgeOS Control visibly separates candidate preparation, isolated preview, human approval, and application while the terminal proof remains reproducible.
+7. A runtime-unique Operations Status Dashboard and a distinct second mission demonstrate that the Builder is mission-driven rather than a static template.
+8. The public repository is reproducible and records Qodo review evidence for every substantive pull request.
 
 ## Repository language
 

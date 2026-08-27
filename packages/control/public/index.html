@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="forgeos-control-token" content="__FORGEOS_CONTROL_TOKEN__">
+    <meta name="theme-color" content="#080808">
+    <title>ForgeOS Control</title>
+    <link rel="stylesheet" href="/app.css">
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body class="is-home">
+    <header class="app-header">
+      <a class="brand" href="/" aria-label="ForgeOS home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M12 2.7 20 7.3v9.4l-8 4.6-8-4.6V7.3l8-4.6Z"></path>
+            <path d="m8.1 9.6 3.9-2.2 3.9 2.2v4.8L12 16.6l-3.9-2.2V9.6Z"></path>
+          </svg>
+        </span>
+        <span>ForgeOS</span>
+      </a>
+      <div class="project-indicator" aria-label="Connected project">
+        <span data-project-name>greeting-project</span>
+        <span class="separator" aria-hidden="true">·</span>
+        <span data-project-branch>main</span>
+        <span class="clean-state"><span class="status-dot" aria-hidden="true"></span>clean</span>
+      </div>
+      <span class="header-status">Ready</span>
+    </header>
+
+    <svg class="ambient-wave" viewBox="0 0 760 520" aria-hidden="true" focusable="false">
+      <defs>
+        <linearGradient id="wave-stroke" x1="0" y1="1" x2="1" y2="0">
+          <stop offset="0" stop-color="#4f2a06" stop-opacity="0"></stop>
+          <stop offset=".48" stop-color="#d87708" stop-opacity=".82"></stop>
+          <stop offset="1" stop-color="#ffb01f" stop-opacity=".18"></stop>
+        </linearGradient>
+      </defs>
+      <g fill="none" stroke="url(#wave-stroke)" stroke-width="1">
+        <path d="M-30 512C130 330 245 466 348 322S564 86 790 146"></path>
+        <path d="M-20 504C138 324 250 452 354 313S570 78 790 137"></path>
+        <path d="M-10 496C146 318 255 438 360 304S576 70 790 128"></path>
+        <path d="M0 488C154 312 260 424 366 295S582 62 790 119"></path>
+        <path d="M10 480C162 306 265 410 372 286S588 54 790 110"></path>
+        <path d="M20 472C170 300 270 396 378 277S594 46 790 101"></path>
+        <path d="M30 464C178 294 275 382 384 268S600 38 790 92"></path>
+        <path d="M40 456C186 288 280 368 390 259S606 30 790 83"></path>
+        <path d="M50 448C194 282 285 354 396 250S612 22 790 74"></path>
+        <path d="M60 440C202 276 290 340 402 241S618 14 790 65"></path>
+        <path d="M70 432C210 270 295 326 408 232S624 6 790 56"></path>
+        <path d="M80 424C218 264 300 312 414 223S630-2 790 47"></path>
+        <path d="M90 416C226 258 305 298 420 214S636-10 790 38"></path>
+        <path d="M100 408C234 252 310 284 426 205S642-18 790 29"></path>
+      </g>
+    </svg>
+
+    <main class="home-shell" id="app">
+      <section class="mission-hero" aria-labelledby="home-title">
+        <p class="eyebrow">LOCAL AI CODING HARNESS</p>
+        <h1 id="home-title">What would you like to <span class="accent-word">build</span> today?</h1>
+        <p class="intro">Describe one focused change. ForgeOS will work in isolation, validate the result, and ask before touching your project.</p>
+
+        <form class="mission-composer" data-mission-form>
+          <label for="mission">Mission</label>
+          <textarea id="mission" name="mission" rows="5" required aria-describedby="mission-help"></textarea>
+          <div class="composer-footer">
+            <p id="mission-help">Prepared demo project · Node.js · created fresh for every mission</p>
+            <button type="submit">Run Mission</button>
+          </div>
+        </form>
+
+        <p class="safety-note"><span class="safety-shield" aria-hidden="true"></span> Agents can propose. Humans authorize irreversible changes.</p>
+      </section>
+    </main>
+    <div class="toast" role="status" aria-live="polite" data-toast hidden></div>
+  </body>
+</html>

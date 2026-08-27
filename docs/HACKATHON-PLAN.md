@@ -84,6 +84,18 @@ Branch: `feat/demo-submission-readiness`
 
 Phase 5 does not add a web interface, persistence, a backend, or another product subsystem.
 
+### PR 6: ForgeOS Control and generalized real-project Builder
+
+Branch: `feat/forgeos-control-ui`
+
+- Loopback-only ForgeOS Control with mission, result, preview, changes, evidence, logs, approval, denial, completion, and failure states.
+- Bounded TrueForge Builder file tools for mission-driven multi-file work below `public/`, without general shell or package installation authority.
+- Immutable run-specific project requirements and acceptance tests, authoritative Git diff, deterministic review, and at most two repair turns.
+- Read-only CandidatePatch preview in a separately isolated loopback origin and sandboxed iframe before human approval.
+- Operations Status Dashboard hero proof, a second anti-hardcoding run, and a distinct reading-list mission smoke proof.
+
+This gate preserves the existing CandidatePatch, approval, validation, and application architecture. It does not add durable persistence, restart recovery, cloud execution, automatic commits, pushes, deployment, or general autonomous project support.
+
 ## Milestones and budget
 
 | Milestone | Target effort | Exit condition |
@@ -92,7 +104,7 @@ Phase 5 does not add a web interface, persistence, a backend, or another product
 | Contracts and state | 6 hours | PR 1 reviewed and tests pass |
 | TrueForge and sandbox tools | 10 hours | PR 2 reviewed; real sandbox execution visible |
 | Patch approval boundary | 8 hours | PR 3 reviewed; deny and allow behavior proven |
-| Demo presentation | 6 hours | Existing safety workflow is clear in one terminal command |
+| Demo presentation | 6 hours | Existing safety workflow is clear in ForgeOS Control and one terminal proof command |
 | Submission evidence | 6 hours | Reproducible setup, Qodo trail, script, and write-up |
 | Contingency | 4 hours | Reserved for TrueForge version or macOS constraints |
 
@@ -112,7 +124,7 @@ Proceed only if denial causes no real-project write, approval applies exactly on
 
 ### Gate D: Submission
 
-Proceed only if the terminal demo completes in approximately three minutes, all tests pass, and representative Qodo-reviewed pull requests are public.
+Proceed only if the visual hero demo makes candidate preview and the real human gate clear, the terminal regression remains reproducible, all tests pass, and representative Qodo-reviewed pull requests are public.
 
 ## Qodo workflow
 

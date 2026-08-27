@@ -6,6 +6,7 @@ import path from "node:path";
 import { runDemo } from "./demo.js";
 import { helpText, parseArguments } from "./presentation.js";
 import { runPreflight } from "./preflight.js";
+import { runRealProjectDemo } from "./real-project-demo.js";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -19,6 +20,10 @@ async function main() {
     const result = await runPreflight({ repositoryRoot });
     console.log("ForgeOS Lite demo preflight passed:");
     for (const check of result.checks) console.log(`- ${check}`);
+    return;
+  }
+  if (options.command === "real") {
+    await runRealProjectDemo({ ...options, repositoryRoot });
     return;
   }
   await runDemo({ ...options, repositoryRoot });

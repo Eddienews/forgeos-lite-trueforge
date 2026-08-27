@@ -35,6 +35,7 @@ test("demo argument parsing keeps the primary path simple", () => {
     deny: false,
     json: false,
     keepProject: false,
+    reading: false,
     verbose: false
   });
   assert.deepEqual(parseArguments(["demo", "--deny", "--keep-project"]), {
@@ -42,8 +43,11 @@ test("demo argument parsing keeps the primary path simple", () => {
     deny: true,
     json: false,
     keepProject: true,
+    reading: false,
     verbose: false
   });
+  assert.equal(parseArguments(["real", "--reading", "--deny"]).reading, true);
+  assert.throws(() => parseArguments(["demo", "--reading"]), /only for the real-project/u);
   assert.throws(() => parseArguments(["check", "--verbose"]), /does not accept options/u);
   assert.throws(() => parseArguments(["unknown"]), /Unknown ForgeOS Lite command/u);
 });
@@ -184,6 +188,11 @@ test("fixture generator creates a clean, disposable Git project", async () => {
     );
     assert.equal(head.trim(), fixture.baseRevision);
     assert.equal(status, "");
+    const { stdout: branch } = await execFileAsync("git", ["branch", "--show-current"], {
+      cwd: fixture.projectRoot,
+      encoding: "utf8"
+    });
+    assert.equal(branch.trim(), "main");
     assert.equal(
       await readFile(path.join(fixture.projectRoot, "src/greeting.js"), "utf8"),
       fixture.originalGreeting
